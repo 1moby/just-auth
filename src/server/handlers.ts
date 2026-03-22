@@ -273,6 +273,11 @@ export function createHandlers(config: HandlersConfig) {
         serializeStateCookie("oauth_state", "", { ...cookieConfig })
           .replace("Max-Age=600", "Max-Age=0")
       );
+      headers.append(
+        "Set-Cookie",
+        serializeStateCookie("code_verifier", "", { ...cookieConfig })
+          .replace("Max-Age=600", "Max-Age=0")
+      );
 
       return new Response(null, { status: 302, headers });
     } catch (error) {
