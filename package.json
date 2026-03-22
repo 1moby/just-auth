@@ -1,0 +1,101 @@
+{
+  "name": "@1moby/just-auth",
+  "version": "0.1.0",
+  "description": "Lightweight zero-dependency edge-native auth library for React",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./src/index.ts"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js",
+      "default": "./src/client/index.ts"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "default": "./src/server/index.ts"
+    },
+    "./middleware": {
+      "types": "./dist/middleware/index.d.ts",
+      "import": "./dist/middleware/index.js",
+      "default": "./src/middleware/index.ts"
+    },
+    "./adapters/d1": {
+      "types": "./dist/adapters/d1.d.ts",
+      "import": "./dist/adapters/d1.js",
+      "default": "./src/adapters/d1.ts"
+    },
+    "./adapters/bun-sqlite": {
+      "types": "./dist/adapters/bun-sqlite.d.ts",
+      "import": "./dist/adapters/bun-sqlite.js",
+      "default": "./src/adapters/bun-sqlite.ts"
+    },
+    "./adapters/pg": {
+      "types": "./dist/adapters/pg.d.ts",
+      "import": "./dist/adapters/pg.js",
+      "default": "./src/adapters/pg.ts"
+    },
+    "./adapters/mysql": {
+      "types": "./dist/adapters/mysql.d.ts",
+      "import": "./dist/adapters/mysql.js",
+      "default": "./src/adapters/mysql.ts"
+    },
+    "./adapters/bun-sql": {
+      "types": "./dist/adapters/bun-sql.d.ts",
+      "import": "./dist/adapters/bun-sql.js",
+      "default": "./src/adapters/bun-sql.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "prepare": "bun scripts/build.ts",
+    "test": "bun test",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "auth",
+    "authentication",
+    "oauth",
+    "react",
+    "session",
+    "edge",
+    "cloudflare",
+    "workers",
+    "d1",
+    "sqlite",
+    "postgres",
+    "mysql",
+    "rbac",
+    "zero-dependency"
+  ],
+  "author": "1moby",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1moby/just-auth.git"
+  },
+  "homepage": "https://github.com/1moby/just-auth#readme",
+  "bugs": {
+    "url": "https://github.com/1moby/just-auth/issues"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14",
+    "react": "^19.2.4",
+    "typescript": "^5"
+  }
+}

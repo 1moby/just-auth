@@ -1,0 +1,15 @@
+tests/
+sample-auth/
+docs/
+scripts/
+.claude/
+.gitignore
+.npmignore
+tsconfig.json
+tsconfig.build.json
+bun.lock
+*.test.ts
+.env*
+auth.db
+CLAUDE.md
+README.th.md
