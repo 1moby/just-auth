@@ -153,9 +153,9 @@ describe("createReactAuth", () => {
       // Step 1: Login redirect
       const loginReq = new Request("http://localhost/api/auth/login/github");
       const loginRes = await authInstance.handleRequest(loginReq);
-      expect(loginRes!.status).toBe(302);
-      const location = loginRes!.headers.get("location");
-      expect(location).toContain("auth.example.com");
+      expect(loginRes!.status).toBe(200);
+      const loginHtml = await loginRes!.text();
+      expect(loginHtml).toContain("auth.example.com");
 
       // Extract state from cookie
       const stateCookies = loginRes!.headers.getSetCookie();
@@ -168,7 +168,7 @@ describe("createReactAuth", () => {
         { headers: { cookie: `oauth_state=${stateValue}` } }
       );
       const callbackRes = await authInstance.handleRequest(callbackReq);
-      expect(callbackRes!.status).toBe(302);
+      expect(callbackRes!.status).toBe(200);
 
       // Extract session cookie
       const sessionCookies = callbackRes!.headers.getSetCookie();

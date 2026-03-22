@@ -74,7 +74,7 @@ describe("Route Handlers", () => {
       const req = new Request("http://localhost/api/auth/login/github");
       const res = await handlers.handleRequest(req);
       expect(res).not.toBeNull();
-      expect(res!.status).toBe(302);
+      expect(res!.status).toBe(200);
     });
 
     it("should handle /api/auth/logout", async () => {
@@ -86,12 +86,12 @@ describe("Route Handlers", () => {
   });
 
   describe("Login handler", () => {
-    it("should redirect to provider authorization URL", async () => {
+    it("should return HTML redirect to provider authorization URL", async () => {
       const req = new Request("http://localhost/api/auth/login/github");
       const res = await handlers.handleRequest(req);
-      expect(res!.status).toBe(302);
-      const location = res!.headers.get("location");
-      expect(location).toContain("provider.example.com/auth");
+      expect(res!.status).toBe(200);
+      const html = await res!.text();
+      expect(html).toContain("provider.example.com/auth");
     });
 
     it("should set oauth_state cookie", async () => {
@@ -135,8 +135,9 @@ describe("Route Handlers", () => {
         { headers: { cookie: "oauth_state=test-state" } }
       );
       const res = await handlers.handleRequest(req);
-      expect(res!.status).toBe(302);
-      expect(res!.headers.get("location")).toBe("/");
+      expect(res!.status).toBe(200);
+      const html = await res!.text();
+      expect(html).toContain("Redirecting");
 
       // Should have created a user
       const users = db.tables.get("users");
@@ -432,7 +433,7 @@ describe("Route Handlers", () => {
         "http://localhost/api/auth/callback/github?code=abc&state=s1",
         { headers: { cookie: "oauth_state=s1" } }
       ));
-      expect(res!.status).toBe(302);
+      expect(res!.status).toBe(200); // HTML redirect
 
       expect(db.tables.get("users")).toHaveLength(1);
       expect(db.tables.get("accounts")).toHaveLength(2);
@@ -680,7 +681,7 @@ describe("Route Handlers", () => {
           headers: { cookie: `oauth_state=${state}` },
         })
       );
-      expect(callbackRes!.status).toBe(302); // redirect = success
+      expect(callbackRes!.status).toBe(200); // HTML redirect = success
     });
 
     it("should reject registration when email domain is not allowed", async () => {

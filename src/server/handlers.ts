@@ -46,6 +46,42 @@ function responseWithCookies(
   return new Response(body, { status: init.status, headers: tuples });
 }
 
+/**
+ * Resolve a redirect URL to an absolute URL using proxy headers.
+ * Handles X-Forwarded-Proto/Host for deployments behind reverse proxies.
+ */
+function resolveAbsoluteUrl(redirect: string, request: Request): string {
+  if (redirect.startsWith("http")) return redirect;
+  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim()
+    || request.headers.get("host") || "localhost";
+  const base = `${proto === "http" && host.includes(".") ? "https" : proto}://${host}`;
+  return `${base}${redirect}`;
+}
+
+/**
+ * Return a 200 HTML page that sets cookies and redirects via meta refresh + JS.
+ * This avoids the issue where reverse proxies (nginx, k8s, ALB) intercept 302
+ * responses and follow them internally, causing Set-Cookie headers to be lost.
+ * Same pattern as Auth.js/NextAuth.
+ */
+function htmlRedirectWithCookies(
+  redirect: string,
+  request: Request,
+  cookies: string[]
+): Response {
+  const absoluteUrl = resolveAbsoluteUrl(redirect, request);
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${absoluteUrl}"><title>Redirecting...</title></head><body><script>window.location.href=${JSON.stringify(absoluteUrl)}</script><noscript><a href="${absoluteUrl}">Click here</a></noscript></body></html>`;
+  return responseWithCookies(html, {
+    status: 200,
+    cookies,
+    extraHeaders: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    },
+  });
+}
+
 /** Validate redirect URL is same-origin or relative path (prevents open redirect) */
 function isSafeRedirect(url: string, request: Request): boolean {
   if (url.startsWith("/") && !url.startsWith("//")) return true;
@@ -169,11 +205,7 @@ export function createHandlers(config: HandlersConfig) {
       );
     }
 
-    return responseWithCookies(null, {
-      status: 302,
-      cookies,
-      extraHeaders: { Location: url.toString() },
-    });
+    return htmlRedirectWithCookies(url.toString(), request, cookies);
   }
 
   async function handleCallback(
@@ -281,16 +313,13 @@ export function createHandlers(config: HandlersConfig) {
       const { token } = await sessionManager.createSession(user.id);
 
       const rawRedirect = onAuthSuccess?.(user, request) ?? "/";
-      return responseWithCookies(null, {
-        status: 302,
-        cookies: [
-          serializeSessionCookie(cookieConfig, token, sessionMaxAge),
-          // Clear state cookies
-          serializeStateCookie("oauth_state", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
-          serializeStateCookie("code_verifier", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
-        ],
-        extraHeaders: { Location: isSafeRedirect(rawRedirect, request) ? rawRedirect : "/" },
-      });
+      const redirect = isSafeRedirect(rawRedirect, request) ? rawRedirect : "/";
+      return htmlRedirectWithCookies(redirect, request, [
+        serializeSessionCookie(cookieConfig, token, sessionMaxAge),
+        // Clear state cookies
+        serializeStateCookie("oauth_state", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
+        serializeStateCookie("code_verifier", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
+      ]);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "OAuth callback failed";
