@@ -26,6 +26,26 @@ function generateId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Build a Response with multiple Set-Cookie headers using header tuples.
+ * This avoids the comma-merging issue some frameworks have with Headers.append().
+ */
+function responseWithCookies(
+  body: BodyInit | null,
+  init: { status: number; cookies: string[]; extraHeaders?: Record<string, string> }
+): Response {
+  const tuples: [string, string][] = [];
+  if (init.extraHeaders) {
+    for (const [k, v] of Object.entries(init.extraHeaders)) {
+      tuples.push([k, v]);
+    }
+  }
+  for (const cookie of init.cookies) {
+    tuples.push(["Set-Cookie", cookie]);
+  }
+  return new Response(body, { status: init.status, headers: tuples });
+}
+
 /** Validate redirect URL is same-origin or relative path (prevents open redirect) */
 function isSafeRedirect(url: string, request: Request): boolean {
   if (url.startsWith("/") && !url.startsWith("//")) return true;
@@ -138,22 +158,22 @@ export function createHandlers(config: HandlersConfig) {
     const state = generateState();
     const url = await provider.createAuthorizationURL(state);
 
-    const headers = new Headers();
-    headers.set("Location", url.toString());
-    headers.append(
-      "Set-Cookie",
-      serializeStateCookie("oauth_state", state, cookieConfig)
-    );
+    const cookies = [
+      serializeStateCookie("oauth_state", state, cookieConfig),
+    ];
 
     // For Google PKCE, store the code verifier
     if ("codeVerifier" in provider && typeof provider.codeVerifier === "string") {
-      headers.append(
-        "Set-Cookie",
+      cookies.push(
         serializeStateCookie("code_verifier", provider.codeVerifier, cookieConfig)
       );
     }
 
-    return new Response(null, { status: 302, headers });
+    return responseWithCookies(null, {
+      status: 302,
+      cookies,
+      extraHeaders: { Location: url.toString() },
+    });
   }
 
   async function handleCallback(
@@ -260,26 +280,17 @@ export function createHandlers(config: HandlersConfig) {
 
       const { token } = await sessionManager.createSession(user.id);
 
-      const headers = new Headers();
       const rawRedirect = onAuthSuccess?.(user, request) ?? "/";
-      headers.set("Location", isSafeRedirect(rawRedirect, request) ? rawRedirect : "/");
-      headers.append(
-        "Set-Cookie",
-        serializeSessionCookie(cookieConfig, token, sessionMaxAge)
-      );
-      // Clear state cookies
-      headers.append(
-        "Set-Cookie",
-        serializeStateCookie("oauth_state", "", { ...cookieConfig })
-          .replace("Max-Age=600", "Max-Age=0")
-      );
-      headers.append(
-        "Set-Cookie",
-        serializeStateCookie("code_verifier", "", { ...cookieConfig })
-          .replace("Max-Age=600", "Max-Age=0")
-      );
-
-      return new Response(null, { status: 302, headers });
+      return responseWithCookies(null, {
+        status: 302,
+        cookies: [
+          serializeSessionCookie(cookieConfig, token, sessionMaxAge),
+          // Clear state cookies
+          serializeStateCookie("oauth_state", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
+          serializeStateCookie("code_verifier", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
+        ],
+        extraHeaders: { Location: isSafeRedirect(rawRedirect, request) ? rawRedirect : "/" },
+      });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "OAuth callback failed";
@@ -304,10 +315,11 @@ export function createHandlers(config: HandlersConfig) {
     const result = await sessionManager.validateSession(token);
 
     if (!result) {
-      const headers = new Headers();
-      headers.set("Content-Type", "application/json");
-      headers.append("Set-Cookie", clearSessionCookie(cookieConfig));
-      return new Response(JSON.stringify(null), { status: 200, headers });
+      return responseWithCookies(JSON.stringify(null), {
+        status: 200,
+        cookies: [clearSessionCookie(cookieConfig)],
+        extraHeaders: { "Content-Type": "application/json" },
+      });
     }
 
     const accounts = await queries.getAccountsByUserId(result.user.id);
@@ -340,11 +352,11 @@ export function createHandlers(config: HandlersConfig) {
       }
     }
 
-    const headers = new Headers();
-    headers.set("Location", "/");
-    headers.append("Set-Cookie", clearSessionCookie(cookieConfig));
-
-    return new Response(null, { status: 302, headers });
+    return responseWithCookies(null, {
+      status: 302,
+      cookies: [clearSessionCookie(cookieConfig)],
+      extraHeaders: { Location: "/" },
+    });
   }
 
   async function handleRegister(request: Request): Promise<Response> {
@@ -415,16 +427,13 @@ export function createHandlers(config: HandlersConfig) {
 
       const { token } = await sessionManager.createSession(userId);
 
-      const headers = new Headers();
-      headers.set("Content-Type", "application/json");
-      headers.append(
-        "Set-Cookie",
-        serializeSessionCookie(cookieConfig, token, sessionMaxAge)
-      );
-
-      return new Response(
+      return responseWithCookies(
         JSON.stringify({ user: { id: userId, email, name: name ?? null, avatarUrl: null } }),
-        { status: 200, headers }
+        {
+          status: 200,
+          cookies: [serializeSessionCookie(cookieConfig, token, sessionMaxAge)],
+          extraHeaders: { "Content-Type": "application/json" },
+        }
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Registration failed";
@@ -465,16 +474,13 @@ export function createHandlers(config: HandlersConfig) {
 
       const { token } = await sessionManager.createSession(user.id);
 
-      const headers = new Headers();
-      headers.set("Content-Type", "application/json");
-      headers.append(
-        "Set-Cookie",
-        serializeSessionCookie(cookieConfig, token, sessionMaxAge)
-      );
-
-      return new Response(
+      return responseWithCookies(
         JSON.stringify({ user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl } }),
-        { status: 200, headers }
+        {
+          status: 200,
+          cookies: [serializeSessionCookie(cookieConfig, token, sessionMaxAge)],
+          extraHeaders: { "Content-Type": "application/json" },
+        }
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Login failed";
