@@ -44,7 +44,7 @@ Lightweight, zero-dependency, edge-native auth library for React. Uses Web Crypt
 - `POST /api/auth/callback/credentials` — Login with email/password (requires `credentials: true`)
 - `GET /api/auth/session` — Return current session JSON with linked accounts and permissions
 - `POST /api/auth/role` — Set user role (requires `rbac` config + `user:set-role` permission)
-- `GET /api/auth/logout` — Invalidate session, redirect to /
+- `POST /api/auth/logout` — Invalidate session, return `{ ok: true }` with cleared cookie
 
 ## Sample App (sample-auth/)
 

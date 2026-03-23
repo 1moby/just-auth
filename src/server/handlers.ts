@@ -144,8 +144,8 @@ export function createHandlers(config: HandlersConfig) {
       return handleSession(request);
     }
 
-    // GET /api/auth/logout
-    if (subPath === "/logout") {
+    // POST /api/auth/logout
+    if (subPath === "/logout" && request.method === "POST") {
       return handleLogout(request);
     }
 
@@ -381,10 +381,10 @@ export function createHandlers(config: HandlersConfig) {
       }
     }
 
-    return responseWithCookies(null, {
-      status: 302,
+    return responseWithCookies(JSON.stringify({ ok: true }), {
+      status: 200,
       cookies: [clearSessionCookie(cookieConfig)],
-      extraHeaders: { Location: "/" },
+      extraHeaders: { "Content-Type": "application/json" },
     });
   }
 

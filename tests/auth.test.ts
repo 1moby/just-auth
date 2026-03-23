@@ -195,10 +195,11 @@ describe("createReactAuth", () => {
 
       // Step 5: Logout
       const logoutReq = new Request("http://localhost/api/auth/logout", {
+        method: "POST",
         headers: { cookie: `auth_session=${sessionToken}` },
       });
       const logoutRes = await authInstance.handleRequest(logoutReq);
-      expect(logoutRes!.status).toBe(302);
+      expect(logoutRes!.status).toBe(200);
 
       // Step 6: Session should be invalid after logout
       const postLogoutReq = new Request("http://localhost/api/auth/session", {

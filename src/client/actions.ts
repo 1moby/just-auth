@@ -27,5 +27,9 @@ export async function signUp(
 }
 
 export async function signOut(basePath = "/api/auth"): Promise<void> {
-  window.location.href = `${basePath}/logout`;
+  await fetch(`${basePath}/logout`, {
+    method: "POST",
+    credentials: "same-origin",
+  });
+  window.location.href = "/";
 }

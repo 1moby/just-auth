@@ -77,11 +77,11 @@ describe("Route Handlers", () => {
       expect(res!.status).toBe(200);
     });
 
-    it("should handle /api/auth/logout", async () => {
-      const req = new Request("http://localhost/api/auth/logout");
+    it("should handle POST /api/auth/logout", async () => {
+      const req = new Request("http://localhost/api/auth/logout", { method: "POST" });
       const res = await handlers.handleRequest(req);
       expect(res).not.toBeNull();
-      expect(res!.status).toBe(302);
+      expect(res!.status).toBe(200);
     });
   });
 
@@ -470,11 +470,12 @@ describe("Route Handlers", () => {
   });
 
   describe("Logout handler", () => {
-    it("should redirect to / and clear cookie", async () => {
-      const req = new Request("http://localhost/api/auth/logout");
+    it("should return JSON and clear cookie", async () => {
+      const req = new Request("http://localhost/api/auth/logout", { method: "POST" });
       const res = await handlers.handleRequest(req);
-      expect(res!.status).toBe(302);
-      expect(res!.headers.get("location")).toBe("/");
+      expect(res!.status).toBe(200);
+      const body = await res!.json() as { ok: boolean };
+      expect(body.ok).toBe(true);
       const cookies = res!.headers.getSetCookie();
       const clearCookie = cookies.find((c) =>
         c.includes("auth_session=") && c.includes("Max-Age=0")
@@ -489,6 +490,7 @@ describe("Route Handlers", () => {
       const { token } = await sessionManager.createSession("u1");
 
       const req = new Request("http://localhost/api/auth/logout", {
+        method: "POST",
         headers: { cookie: `auth_session=${token}` },
       });
       await handlers.handleRequest(req);
