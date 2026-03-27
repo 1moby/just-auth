@@ -4,24 +4,20 @@ Lightweight, zero-dependency, edge-native auth library for React. Uses Web Crypt
 
 ## Project Structure
 
-- `src/index.ts` — `createReactAuth()` factory, re-exports all public API
-- `src/types.ts` — All TypeScript interfaces (User, Session, Account, DatabaseAdapter, AuthConfig, etc.)
-- `src/core/session.ts` — `generateSessionToken()`, `hashToken()` (async SHA-256 via Web Crypto), `createSessionManager()`, `encodeBase64url()`, `encodeHex()`
-- `src/core/cookie.ts` — Cookie serialization/parsing, state cookies, PKCE cookies
-- `src/core/password.ts` — PBKDF2-SHA256 password hashing (600k iterations) via Web Crypto API, constant-time comparison
-- `src/core/oauth.ts` — OAuth 2.0 utilities: `generateState()`, `generateCodeVerifier()`, `createS256CodeChallenge()`, `exchangeAuthorizationCode()`
-- `src/core/rbac.ts` — `resolvePermissions()` for role→permission mapping
-- `src/providers/` — OAuth providers: `github.ts`, `google.ts` (PKCE), `line.ts` (PKCE)
-- `src/db/queries.ts` — `createQueries()` factory with table prefix support, `resolveTableNames()`
-- `src/db/migrate.ts` — Non-destructive migration with schema validation (never ALTER/DROP existing tables)
-- `src/server/handlers.ts` — Route handlers (login, callback, session, logout, register, credentials login, set-role)
-- `src/server/auth.ts` — `createAuth()` helper, wires session manager + queries
-- `src/client/` — `SessionProvider`, `useSession()`, `signIn()`, `signUp()`, `signOut()`, `usePermission()`, `useRole()`
-- `src/middleware/index.ts` — `createAuthMiddleware()` for route-level permission gating
-- `src/adapters/` — Database adapters: `d1.ts`, `bun-sqlite.ts`, `pg.ts`, `mysql.ts`, `bun-sql.ts`
-- `tests/` — 152 bun:test tests across 11 files with mock DB adapter in `tests/helpers/mock-db.ts`
-- `sample-auth/` — Working Cloudflare Worker demo deployed at https://sample-auth.anu.workers.dev
-- `dist/` — Compiled JS + .d.ts output (built via `bun run build`)
+See [docs/structure.md](docs/structure.md) for detailed file-by-file breakdown.
+
+```
+src/
+├── index.ts              # createReactAuth() factory + all re-exports
+├── types.ts              # All TypeScript interfaces
+├── core/                 # session, cookie, password (PBKDF2), oauth, rbac
+├── providers/            # github, google (PKCE), line (PKCE)
+├── db/                   # queries (with table prefix), migrate (non-destructive)
+├── server/               # auth helper, route handlers (HTML redirects, header tuples)
+├── client/               # SessionProvider, useSession, signIn/signUp/signOut, usePermission/useRole
+├── middleware/            # createAuthMiddleware (route-level permission gating)
+└── adapters/             # d1, bun-sqlite, pg, mysql, bun-sql
+```
 
 ## Package Exports
 
