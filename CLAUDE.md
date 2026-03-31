@@ -35,6 +35,7 @@ src/
 
 - `bun run build` — Compiles `src/` to `dist/` (ESM .js + .d.ts via tsc)
 - `npm publish --access public` — Publish to npm (runs build via prepublishOnly)
+- **Versioning:** Always bump the patch version (last digit) in `package.json` before each publish. Example: `0.1.0` → `0.1.1` → `0.1.2`
 - `prepare` script auto-builds on `bun install` from git source
 - Dual output: consumers can import from `dist/` (compiled) or `src/` (raw .ts for Bun/bundlers)
 

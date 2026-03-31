@@ -1,6 +1,6 @@
 {
   "name": "@1moby/just-auth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lightweight zero-dependency edge-native auth library for React",
   "type": "module",
   "sideEffects": false,
