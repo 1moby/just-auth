@@ -2,7 +2,7 @@ import type { AuthConfig, AuthInstance } from "./types.ts";
 import { createAuth } from "./server/auth.ts";
 import { createHandlers } from "./server/handlers.ts";
 import { createProviderMap } from "./providers/index.ts";
-import { resolvePermissions } from "./core/rbac.ts";
+import { resolvePermissions, parseRoles } from "./core/rbac.ts";
 
 export function createReactAuth(config: AuthConfig): AuthInstance {
   const basePath = config.basePath ?? "/api/auth";
@@ -38,8 +38,14 @@ export function createReactAuth(config: AuthConfig): AuthInstance {
   async function hasRole(request: Request, role: string): Promise<boolean> {
     const result = await auth(request);
     if (!result) return false;
-    const userRole = result.user.role ?? config.rbac?.defaultRole;
-    return userRole === role;
+    const userRoles = parseRoles(result.user.role ?? config.rbac?.defaultRole ?? "");
+    return userRoles.includes(role);
+  }
+
+  async function getRoles(request: Request): Promise<string[]> {
+    const result = await auth(request);
+    if (!result) return [];
+    return parseRoles(result.user.role ?? config.rbac?.defaultRole ?? "");
   }
 
   return {
@@ -49,6 +55,7 @@ export function createReactAuth(config: AuthConfig): AuthInstance {
     sessionManager,
     hasPermission,
     hasRole,
+    getRoles,
   };
 }
 
@@ -72,6 +79,7 @@ export type {
   SessionStatus,
   SessionContextValue,
   RbacConfig,
+  RoleDefinition,
 } from "./types.ts";
 
 export { createGitHubProvider } from "./providers/github.ts";
@@ -86,7 +94,7 @@ export type { MigrateOptions } from "./db/migrate.ts";
 export { createQueries, resolveTableNames } from "./db/queries.ts";
 export type { Queries, TableNames } from "./db/queries.ts";
 export { hashPassword, verifyPassword } from "./core/password.ts";
-export { resolvePermissions } from "./core/rbac.ts";
+export { resolvePermissions, parseRoles } from "./core/rbac.ts";
 
 export {
   generateSessionToken,

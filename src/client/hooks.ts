@@ -9,5 +9,7 @@ export function usePermission(permission: string): boolean {
 
 export function useRole(role: string): boolean {
   const { data } = useSession();
-  return data?.user?.role === role;
+  const userRole = data?.user?.role;
+  if (!userRole) return false;
+  return userRole.split(",").map((r) => r.trim()).includes(role);
 }

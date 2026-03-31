@@ -75,9 +75,16 @@ export interface SessionOptions {
   refreshThreshold?: number; // seconds, default 15 days
 }
 
+export interface RoleDefinition {
+  allow: Record<string, string[]>;
+  deny?: Record<string, string[]>;
+  inherits?: string[];
+}
+
 export interface RbacConfig {
   statements: Record<string, readonly string[]>;
-  roles: Record<string, Record<string, string[]> | "*">;
+  /** Role definitions. Use Record<string, string[]> (legacy), RoleDefinition, or "*" (all permissions). */
+  roles: Record<string, Record<string, string[]> | RoleDefinition | "*">;
   defaultRole?: string;
 }
 
@@ -110,6 +117,7 @@ export interface AuthInstance {
   sessionManager: SessionManager;
   hasPermission(request: Request, permission: string): Promise<boolean>;
   hasRole(request: Request, role: string): Promise<boolean>;
+  getRoles(request: Request): Promise<string[]>;
 }
 
 export interface SessionManager {

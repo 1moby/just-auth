@@ -13,7 +13,7 @@ import {
   parseCookieValue,
 } from "../core/cookie.ts";
 import { hashPassword, verifyPassword } from "../core/password.ts";
-import { resolvePermissions } from "../core/rbac.ts";
+import { resolvePermissions, parseRoles } from "../core/rbac.ts";
 import type { RbacConfig } from "../types.ts";
 import type { Queries } from "../db/queries.ts";
 
@@ -544,25 +544,74 @@ export function createHandlers(config: HandlersConfig) {
     }
 
     try {
-      const body = await request.json() as { userId?: string; role?: string };
-      if (!body.userId || !body.role) {
+      const body = await request.json() as {
+        userId?: string;
+        role?: string;
+        roles?: string[];
+        addRole?: string;
+        removeRole?: string;
+      };
+      if (!body.userId) {
         return new Response(
-          JSON.stringify({ error: "userId and role are required" }),
+          JSON.stringify({ error: "userId is required" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
 
-      if (!config.rbac!.roles[body.role]) {
-        return new Response(
-          JSON.stringify({ error: `Invalid role: ${body.role}` }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
+      let finalRole: string;
+
+      if (body.addRole || body.removeRole) {
+        // Incremental: add or remove a single role
+        const targetRole = body.addRole ?? body.removeRole!;
+        if (body.addRole && !config.rbac!.roles[targetRole]) {
+          return new Response(
+            JSON.stringify({ error: `Invalid role: ${targetRole}` }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        // Get current roles from user
+        const user = await queries.getUserById(body.userId);
+        if (!user) {
+          return new Response(
+            JSON.stringify({ error: "User not found" }),
+            { status: 404, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        const currentRoles = parseRoles(user.role ?? config.rbac!.defaultRole ?? "user");
+        if (body.addRole) {
+          if (!currentRoles.includes(body.addRole)) {
+            currentRoles.push(body.addRole);
+          }
+        } else {
+          const idx = currentRoles.indexOf(body.removeRole!);
+          if (idx !== -1) currentRoles.splice(idx, 1);
+        }
+        finalRole = currentRoles.join(",") || config.rbac!.defaultRole || "user";
+      } else {
+        // Set exact roles
+        const rolesToSet = body.roles ?? (body.role ? [body.role] : null);
+        if (!rolesToSet || rolesToSet.length === 0) {
+          return new Response(
+            JSON.stringify({ error: "role, roles, addRole, or removeRole is required" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        // Validate all roles
+        for (const r of rolesToSet) {
+          if (!config.rbac!.roles[r]) {
+            return new Response(
+              JSON.stringify({ error: `Invalid role: ${r}` }),
+              { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
+        finalRole = rolesToSet.join(",");
       }
 
-      await queries.updateUserRole(body.userId, body.role);
+      await queries.updateUserRole(body.userId, finalRole);
 
       return new Response(
-        JSON.stringify({ user: { id: body.userId, role: body.role } }),
+        JSON.stringify({ user: { id: body.userId, role: finalRole } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     } catch (error) {
