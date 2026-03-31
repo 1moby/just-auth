@@ -9,7 +9,7 @@
 | `cookie.ts` | `resolveCookieConfig()`, `serializeSessionCookie()`, `clearSessionCookie()`, `parseSessionCookie()`, `serializeStateCookie()`, `parseCookieValue()` |
 | `password.ts` | `hashPassword()` PBKDF2-SHA256 (600k iterations), `verifyPassword()` with constant-time comparison |
 | `oauth.ts` | `generateState()`, `generateCodeVerifier()`, `createS256CodeChallenge()`, `exchangeAuthorizationCode()` — all Web Crypto, zero deps |
-| `rbac.ts` | `resolvePermissions(role, rbacConfig)` — maps role to `resource:action` permission strings |
+| `rbac.ts` | `resolvePermissions(roleString, rbacConfig)` — multi-role (comma-separated), inheritance (cycle-safe), deny-wins. `parseRoles(str)` splits role strings. |
 
 ### Providers (`src/providers/`)
 | File | Purpose |
@@ -60,7 +60,7 @@
 
 ## Tests (`tests/`)
 
-152 tests across 11 files using `bun:test`:
+169 tests across 11 files using `bun:test`:
 
 | File | What it tests |
 |------|---------------|

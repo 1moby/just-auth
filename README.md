@@ -189,7 +189,7 @@ createReactAuth({
     refreshThreshold: 15 * 86400,     // extend when < 15 days remaining
   },
 
-  // RBAC
+  // RBAC (see full RBAC section below)
   rbac: {
     statements: {
       post: ["create", "read", "update", "delete"],
@@ -206,18 +206,87 @@ createReactAuth({
 
 ## RBAC
 
+Supports multi-role per user, role inheritance, and deny rules — all backward-compatible with single-role setups.
+
+### Basic (single role)
+
 ```ts
-// Server
-const canEdit = await auth.hasPermission(request, "post:update");
-const isAdmin = await auth.hasRole(request, "admin");
+rbac: {
+  statements: {
+    post: ["create", "read", "update", "delete"],
+    user: ["list", "ban", "set-role"],
+  },
+  roles: {
+    viewer: { post: ["read"] },
+    admin: "*",  // all permissions
+  },
+  defaultRole: "viewer",
+}
 ```
 
+### Multi-role
+
+Multiple roles stored as comma-separated string in the same `role` column (`"user,editor"`):
+
+```ts
+// Assign multiple roles
+POST /api/auth/role
+{ userId: "u1", roles: ["user", "editor"] }
+
+// Add a role incrementally
+{ userId: "u1", addRole: "editor" }
+
+// Remove a role
+{ userId: "u1", removeRole: "admin" }
+```
+
+### Role Inheritance
+
+```ts
+roles: {
+  viewer: { post: ["read"] },
+  editor: {
+    allow: { post: ["create", "read", "update"] },
+    inherits: ["viewer"],  // gets all viewer permissions
+  },
+  moderator: {
+    allow: { user: ["list", "ban"] },
+    inherits: ["editor"],  // editor → viewer chain
+  },
+}
+```
+
+### Deny Rules (deny always wins)
+
+```ts
+roles: {
+  moderator: {
+    allow: { user: ["list", "ban", "set-role"] },
+    deny: { user: ["set-role"] },  // can ban but can't change roles
+  },
+  admin: {
+    allow: "*",
+    deny: { billing: ["manage"] },  // can view but not manage billing
+  },
+  superadmin: "*",  // unrestricted
+}
+```
+
+### Server API
+
+```ts
+const canEdit = await auth.hasPermission(request, "post:update");
+const isAdmin = await auth.hasRole(request, "admin");     // multi-role aware
+const roles = await auth.getRoles(request);                // ["user", "editor"]
+```
+
+### Client API
+
 ```tsx
-// Client
 import { usePermission, useRole } from "@1moby/just-auth/client";
 
 const canEdit = usePermission("post:update");
-const isAdmin = useRole("admin");
+const isAdmin = useRole("admin");  // works with "user,admin" multi-role
 ```
 
 ## Route Permission Middleware
@@ -279,7 +348,7 @@ You can also implement the `DatabaseAdapter` interface directly for any custom d
 // Main
 import { createReactAuth, migrate } from "@1moby/just-auth";
 import { createGoogleProvider, createGitHubProvider, createLineProvider } from "@1moby/just-auth";
-import { hashPassword, verifyPassword, resolvePermissions } from "@1moby/just-auth";
+import { hashPassword, verifyPassword, resolvePermissions, parseRoles } from "@1moby/just-auth";
 import { createQueries, resolveTableNames } from "@1moby/just-auth";
 
 // Client
@@ -300,7 +369,7 @@ import { createBunSQLAdapter } from "@1moby/just-auth/adapters/bun-sql";
 import type {
   AuthConfig, AuthInstance, User, Session, Account,
   DatabaseAdapter, OAuthProvider, SessionManager,
-  RbacConfig, SessionContextValue, SessionStatus,
+  RbacConfig, RoleDefinition, SessionContextValue, SessionStatus,
   Queries, TableNames, MigrateOptions,
 } from "@1moby/just-auth";
 ```
@@ -312,7 +381,7 @@ import type {
 ## Testing
 
 ```bash
-bun test  # 152 tests
+bun test  # 169 tests
 ```
 
 ## License

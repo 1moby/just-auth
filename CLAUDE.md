@@ -40,7 +40,7 @@ src/
 
 ## Database
 
-3 tables: `users` (with optional `password_hash` and `role`), `accounts`, `sessions`. DatabaseAdapter interface: `prepare().bind().run()/first()/all()`. Schema uses portable types (`VARCHAR(255)`, `BIGINT`, `TEXT`) for SQLite/Postgres/MySQL compatibility. Session tokens stored as SHA-256 hashes. Sliding window: 30-day sessions, extend at 15 days remaining. Passwords hashed with PBKDF2-SHA256 (600k iterations, Web Crypto API). Optional RBAC: `role VARCHAR(50) DEFAULT 'user'` column, permissions defined in code config. Table prefix support: `tablePrefix: "myapp_"`.
+3 tables: `users` (with optional `password_hash` and `role`), `accounts`, `sessions`. DatabaseAdapter interface: `prepare().bind().run()/first()/all()`. Schema uses portable types (`VARCHAR(255)`, `BIGINT`, `TEXT`) for SQLite/Postgres/MySQL compatibility. Session tokens stored as SHA-256 hashes. Sliding window: 30-day sessions, extend at 15 days remaining. Passwords hashed with PBKDF2-SHA256 (600k iterations, Web Crypto API). Optional RBAC: `role VARCHAR(50) DEFAULT 'user'` column, permissions defined in code config. Multi-role via comma-separated string (`"user,editor"`), role inheritance (`inherits`), deny rules (deny wins). Table prefix support: `tablePrefix: "myapp_"`. See [docs/full-rbac.md](docs/full-rbac.md) for design.
 
 ## Auth Routes (default basePath: /api/auth)
 
@@ -91,7 +91,7 @@ Default to using Bun instead of Node.js.
 
 ## Testing
 
-Use `bun test` to run tests. 152 tests across 11 files.
+Use `bun test` to run tests. 169 tests across 11 files.
 
 ## Frontend
 
