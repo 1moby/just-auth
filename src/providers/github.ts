@@ -1,4 +1,8 @@
-import { exchangeAuthorizationCode } from "../core/oauth.ts";
+import {
+  exchangeAuthorizationCode,
+  generateCodeVerifier,
+  createS256CodeChallenge,
+} from "../core/oauth.ts";
 import type { OAuthProvider, OAuthTokens, OAuthUserProfile } from "../types.ts";
 
 export interface GitHubProviderConfig {
@@ -19,17 +23,28 @@ interface GitHubUser {
 const authorizationEndpoint = "https://github.com/login/oauth/authorize";
 const tokenEndpoint = "https://github.com/login/oauth/access_token";
 
-export function createGitHubProvider(config: GitHubProviderConfig): OAuthProvider {
+export function createGitHubProvider(config: GitHubProviderConfig): OAuthProvider & { codeVerifier: string } {
   const scopes = config.scopes ?? ["user:email"];
+  let currentCodeVerifier = "";
 
   return {
     id: "github",
+    get codeVerifier() {
+      return currentCodeVerifier;
+    },
+    set codeVerifier(value: string) {
+      currentCodeVerifier = value;
+    },
 
-    createAuthorizationURL(state: string): URL {
+    async createAuthorizationURL(state: string): Promise<URL> {
+      currentCodeVerifier = generateCodeVerifier();
+      const codeChallenge = await createS256CodeChallenge(currentCodeVerifier);
       const url = new URL(authorizationEndpoint);
       url.searchParams.set("response_type", "code");
       url.searchParams.set("client_id", config.clientId);
       url.searchParams.set("state", state);
+      url.searchParams.set("code_challenge_method", "S256");
+      url.searchParams.set("code_challenge", codeChallenge);
       if (scopes.length > 0) {
         url.searchParams.set("scope", scopes.join(" "));
       }
@@ -44,6 +59,7 @@ export function createGitHubProvider(config: GitHubProviderConfig): OAuthProvide
         redirectURI: config.redirectURI,
         clientId: config.clientId,
         clientSecret: config.clientSecret,
+        codeVerifier: currentCodeVerifier,
         useBasicAuth: true,
       });
       return { accessToken: result.accessToken };

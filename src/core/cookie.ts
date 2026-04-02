@@ -1,6 +1,6 @@
 import type { CookieOptions } from "../types.ts";
 
-const DEFAULT_COOKIE_NAME = "auth_session";
+const DEFAULT_COOKIE_NAME = "__Host-auth_session";
 
 export interface CookieConfig {
   name: string;

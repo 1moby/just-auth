@@ -76,7 +76,7 @@ describe("createReactAuth", () => {
       const { token } = await authInstance.sessionManager.createSession("u1");
 
       const req = new Request("http://localhost/", {
-        headers: { cookie: `auth_session=${token}` },
+        headers: { cookie: `__Host-auth_session=${token}` },
       });
       const result = await authInstance.auth(req);
       expect(result).not.toBeNull();
@@ -91,7 +91,7 @@ describe("createReactAuth", () => {
       });
 
       const req = new Request("http://localhost/", {
-        headers: { cookie: "auth_session=bad-token" },
+        headers: { cookie: "__Host-auth_session=bad-token" },
       });
       const result = await authInstance.auth(req);
       expect(result).toBeNull();
@@ -172,13 +172,13 @@ describe("createReactAuth", () => {
 
       // Extract session cookie
       const sessionCookies = callbackRes!.headers.getSetCookie();
-      const sessionCookie = sessionCookies.find((c) => c.startsWith("auth_session="));
+      const sessionCookie = sessionCookies.find((c) => c.startsWith("__Host-auth_session="));
       expect(sessionCookie).toBeTruthy();
       const sessionToken = sessionCookie!.split("=")[1]!.split(";")[0]!;
 
       // Step 3: Session check
       const sessionReq = new Request("http://localhost/api/auth/session", {
-        headers: { cookie: `auth_session=${sessionToken}` },
+        headers: { cookie: `__Host-auth_session=${sessionToken}` },
       });
       const sessionRes = await authInstance.handleRequest(sessionReq);
       const sessionData = await sessionRes!.json();
@@ -187,7 +187,7 @@ describe("createReactAuth", () => {
 
       // Step 4: auth() function
       const authReq = new Request("http://localhost/protected", {
-        headers: { cookie: `auth_session=${sessionToken}` },
+        headers: { cookie: `__Host-auth_session=${sessionToken}` },
       });
       const authResult = await authInstance.auth(authReq);
       expect(authResult).not.toBeNull();
@@ -196,14 +196,14 @@ describe("createReactAuth", () => {
       // Step 5: Logout
       const logoutReq = new Request("http://localhost/api/auth/logout", {
         method: "POST",
-        headers: { cookie: `auth_session=${sessionToken}` },
+        headers: { cookie: `__Host-auth_session=${sessionToken}` },
       });
       const logoutRes = await authInstance.handleRequest(logoutReq);
       expect(logoutRes!.status).toBe(200);
 
       // Step 6: Session should be invalid after logout
       const postLogoutReq = new Request("http://localhost/api/auth/session", {
-        headers: { cookie: `auth_session=${sessionToken}` },
+        headers: { cookie: `__Host-auth_session=${sessionToken}` },
       });
       const postLogoutRes = await authInstance.handleRequest(postLogoutReq);
       const postLogoutData = await postLogoutRes!.json();

@@ -11,7 +11,7 @@ import {
 describe("resolveCookieConfig", () => {
   it("should return defaults when no options provided", () => {
     const config = resolveCookieConfig();
-    expect(config.name).toBe("auth_session");
+    expect(config.name).toBe("__Host-auth_session");
     expect(config.secure).toBe(true);
     expect(config.sameSite).toBe("lax");
     expect(config.path).toBe("/");
@@ -46,7 +46,7 @@ describe("serializeSessionCookie", () => {
 
   it("should serialize a session cookie with all attributes", () => {
     const cookie = serializeSessionCookie(config, "my-token", 86400);
-    expect(cookie).toContain("auth_session=my-token");
+    expect(cookie).toContain("__Host-auth_session=my-token");
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("Path=/");
     expect(cookie).toContain("Max-Age=86400");
@@ -77,7 +77,7 @@ describe("clearSessionCookie", () => {
   it("should set Max-Age to 0 and empty value", () => {
     const config = resolveCookieConfig();
     const cookie = clearSessionCookie(config);
-    expect(cookie).toContain("auth_session=");
+    expect(cookie).toContain("__Host-auth_session=");
     expect(cookie).toContain("Max-Age=0");
   });
 });
@@ -86,14 +86,14 @@ describe("parseSessionCookie", () => {
   const config = resolveCookieConfig();
 
   it("should parse the session token from cookie header", () => {
-    const token = parseSessionCookie(config, "auth_session=abc123");
+    const token = parseSessionCookie(config, "__Host-auth_session=abc123");
     expect(token).toBe("abc123");
   });
 
   it("should parse from multiple cookies", () => {
     const token = parseSessionCookie(
       config,
-      "other=foo; auth_session=abc123; bar=baz"
+      "other=foo; __Host-auth_session=abc123; bar=baz"
     );
     expect(token).toBe("abc123");
   });
@@ -109,7 +109,7 @@ describe("parseSessionCookie", () => {
   });
 
   it("should return null for empty cookie value", () => {
-    const token = parseSessionCookie(config, "auth_session=");
+    const token = parseSessionCookie(config, "__Host-auth_session=");
     expect(token).toBeNull();
   });
 

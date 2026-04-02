@@ -155,7 +155,7 @@ describe("Route Handlers", () => {
 
       // Should set session cookie
       const cookies = res!.headers.getSetCookie();
-      const sessionCookie = cookies.find((c) => c.startsWith("auth_session="));
+      const sessionCookie = cookies.find((c) => c.startsWith("__Host-auth_session="));
       expect(sessionCookie).toBeTruthy();
     });
 
@@ -200,7 +200,7 @@ describe("Route Handlers", () => {
       const { token } = await sessionManager.createSession("u1");
 
       const req = new Request("http://localhost/api/auth/session", {
-        headers: { cookie: `auth_session=${token}` },
+        headers: { cookie: `__Host-auth_session=${token}` },
       });
       const res = await handlers.handleRequest(req);
       const body = await res!.json();
@@ -219,7 +219,7 @@ describe("Route Handlers", () => {
       const { token } = await sessionManager.createSession("u1");
 
       const req = new Request("http://localhost/api/auth/session", {
-        headers: { cookie: `auth_session=${token}` },
+        headers: { cookie: `__Host-auth_session=${token}` },
       });
       const res = await handlers.handleRequest(req);
       const body = await res!.json();
@@ -230,14 +230,14 @@ describe("Route Handlers", () => {
 
     it("should clear cookie for expired/invalid session", async () => {
       const req = new Request("http://localhost/api/auth/session", {
-        headers: { cookie: "auth_session=invalid-token" },
+        headers: { cookie: "__Host-auth_session=invalid-token" },
       });
       const res = await handlers.handleRequest(req);
       const body = await res!.json();
       expect(body).toBeNull();
       const cookies = res!.headers.getSetCookie();
       const clearCookie = cookies.find((c) =>
-        c.includes("auth_session=") && c.includes("Max-Age=0")
+        c.includes("__Host-auth_session=") && c.includes("Max-Age=0")
       );
       expect(clearCookie).toBeTruthy();
     });
@@ -267,7 +267,7 @@ describe("Route Handlers", () => {
       expect(body.user.name).toBe("New User");
 
       const cookies = res!.headers.getSetCookie();
-      expect(cookies.some(c => c.startsWith("auth_session="))).toBe(true);
+      expect(cookies.some(c => c.startsWith("__Host-auth_session="))).toBe(true);
 
       expect(db.tables.get("users")).toHaveLength(1);
       const accounts = db.tables.get("accounts")!;
@@ -478,7 +478,7 @@ describe("Route Handlers", () => {
       expect(body.ok).toBe(true);
       const cookies = res!.headers.getSetCookie();
       const clearCookie = cookies.find((c) =>
-        c.includes("auth_session=") && c.includes("Max-Age=0")
+        c.includes("__Host-auth_session=") && c.includes("Max-Age=0")
       );
       expect(clearCookie).toBeTruthy();
     });
@@ -491,7 +491,7 @@ describe("Route Handlers", () => {
 
       const req = new Request("http://localhost/api/auth/logout", {
         method: "POST",
-        headers: { cookie: `auth_session=${token}` },
+        headers: { cookie: `__Host-auth_session=${token}` },
       });
       await handlers.handleRequest(req);
 
@@ -539,7 +539,7 @@ describe("Route Handlers", () => {
       db.tables.set("accounts", []);
       const { token } = await sessionManager.createSession("u1");
       const req = new Request("http://localhost/api/auth/session", {
-        headers: { cookie: `auth_session=${token}` },
+        headers: { cookie: `__Host-auth_session=${token}` },
       });
       const res = await rbacHandlers.handleRequest(req);
       const body = await res!.json();
@@ -555,7 +555,7 @@ describe("Route Handlers", () => {
       db.tables.set("accounts", []);
       const { token } = await sessionManager.createSession("u1");
       const req = new Request("http://localhost/api/auth/session", {
-        headers: { cookie: `auth_session=${token}` },
+        headers: { cookie: `__Host-auth_session=${token}` },
       });
       const res = await handlers.handleRequest(req);
       const body = await res!.json();
@@ -572,7 +572,7 @@ describe("Route Handlers", () => {
       const req = new Request("http://localhost/api/auth/role", {
         method: "POST",
         headers: {
-          cookie: `auth_session=${token}`,
+          cookie: `__Host-auth_session=${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ userId: "u2", role: "admin" }),
@@ -593,7 +593,7 @@ describe("Route Handlers", () => {
       const req = new Request("http://localhost/api/auth/role", {
         method: "POST",
         headers: {
-          cookie: `auth_session=${token}`,
+          cookie: `__Host-auth_session=${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ userId: "u2", role: "admin" }),
@@ -612,7 +612,7 @@ describe("Route Handlers", () => {
       const req = new Request("http://localhost/api/auth/role", {
         method: "POST",
         headers: {
-          cookie: `auth_session=${token}`,
+          cookie: `__Host-auth_session=${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ userId: "u2", role: "superadmin" }),

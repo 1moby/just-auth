@@ -1049,11 +1049,11 @@ Expected: Build complete
 **Step 3: Deploy**
 
 Run: `cd sample-auth && bunx wrangler deploy`
-Expected: Deployed to https://sample-auth.anu.workers.dev
+Expected: Deployed to https://your-worker.your-subdomain.workers.dev
 
 **Step 4: Verify live**
 
-- Visit https://sample-auth.anu.workers.dev/login
+- Visit https://your-worker.your-subdomain.workers.dev/login
 - Test email/password registration
 - Test email/password login
 - Test OAuth login with same email → should link

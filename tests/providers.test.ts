@@ -14,8 +14,8 @@ describe("GitHub Provider", () => {
     expect(provider.id).toBe("github");
   });
 
-  it("should create an authorization URL", () => {
-    const url = provider.createAuthorizationURL("test-state");
+  it("should create an authorization URL", async () => {
+    const url = await provider.createAuthorizationURL("test-state");
     expect(url).toBeInstanceOf(URL);
     expect(url.hostname).toBe("github.com");
     expect(url.pathname).toContain("authorize");
@@ -23,20 +23,32 @@ describe("GitHub Provider", () => {
     expect(url.searchParams.get("client_id")).toBe("test-client-id");
   });
 
-  it("should include scopes in authorization URL", () => {
-    const url = provider.createAuthorizationURL("state");
+  it("should include PKCE code_challenge in URL", async () => {
+    const url = await provider.createAuthorizationURL("state");
+    expect(url.searchParams.get("code_challenge")).toBeTruthy();
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+  });
+
+  it("should expose codeVerifier", async () => {
+    await provider.createAuthorizationURL("state");
+    expect(provider.codeVerifier).toBeTruthy();
+    expect(typeof provider.codeVerifier).toBe("string");
+  });
+
+  it("should include scopes in authorization URL", async () => {
+    const url = await provider.createAuthorizationURL("state");
     const scope = url.searchParams.get("scope");
     expect(scope).toContain("user:email");
   });
 
-  it("should support custom scopes", () => {
+  it("should support custom scopes", async () => {
     const customProvider = createGitHubProvider({
       clientId: "id",
       clientSecret: "secret",
       redirectURI: "http://localhost:3000/cb",
       scopes: ["read:user", "read:org"],
     });
-    const url = customProvider.createAuthorizationURL("state");
+    const url = await customProvider.createAuthorizationURL("state");
     const scope = url.searchParams.get("scope");
     expect(scope).toContain("read:user");
     expect(scope).toContain("read:org");

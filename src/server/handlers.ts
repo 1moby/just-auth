@@ -20,6 +20,34 @@ import type { Queries } from "../db/queries.ts";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_PASSWORD_LENGTH = 128; // prevent PBKDF2 DoS with very long passwords
 
+// Dummy hash used to ensure constant-time response for non-existent users (timing oracle prevention)
+const DUMMY_PASSWORD_HASH = "00000000000000000000000000000000:0000000000000000000000000000000000000000000000000000000000000000";
+
+/**
+ * Constant-time string comparison to prevent timing side-channels.
+ * Hashes both inputs with SHA-256 first so the comparison always operates
+ * on fixed-length (32-byte) values, preventing length-based timing leaks.
+ */
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [ha, hb] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(a)),
+    crypto.subtle.digest("SHA-256", enc.encode(b)),
+  ]);
+  const ba = new Uint8Array(ha);
+  const bb = new Uint8Array(hb);
+  let result = 0;
+  for (let i = 0; i < ba.length; i++) {
+    result |= ba[i]! ^ bb[i]!;
+  }
+  return result === 0;
+}
+
+/** Escape a string for safe embedding in an HTML attribute value */
+function escapeHtmlAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function generateId(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
@@ -71,13 +99,21 @@ function htmlRedirectWithCookies(
   cookies: string[]
 ): Response {
   const absoluteUrl = resolveAbsoluteUrl(redirect, request);
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${absoluteUrl}"><title>Redirecting...</title></head><body><script>window.location.href=${JSON.stringify(absoluteUrl)}</script><noscript><a href="${absoluteUrl}">Click here</a></noscript></body></html>`;
+  const safeUrl = escapeHtmlAttr(absoluteUrl);
+  // JSON.stringify does not escape "/" — a URL containing "</script>" would break out
+  // of the script context. Replace "</" with "<\/" which is valid JS but safe in HTML.
+  const jsUrl = JSON.stringify(absoluteUrl).replace(/</g, "\\u003c");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeUrl}"><title>Redirecting...</title></head><body><script>window.location.href=${jsUrl}</script><noscript><a href="${safeUrl}">Click here</a></noscript></body></html>`;
   return responseWithCookies(html, {
     status: 200,
     cookies,
     extraHeaders: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store, no-cache, must-revalidate",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'none'; img-src 'none'; frame-ancestors 'none'",
+      "Referrer-Policy": "no-referrer",
     },
   });
 }
@@ -120,6 +156,34 @@ function isEmailAllowed(email: string | null, rule?: string[] | ((email: string)
   );
 }
 
+/**
+ * Verify the Origin header on state-changing requests as a secondary CSRF defense.
+ * SameSite cookies are the primary defense, but older browsers may not support them,
+ * and misconfiguring SameSite=none disables that protection entirely.
+ * Returns true if the request is safe (same-origin or no Origin for non-browser clients).
+ */
+function verifyCsrfOrigin(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  // If no Origin header, check Referer as fallback (non-browser clients won't send either)
+  if (!origin) {
+    const referer = request.headers.get("referer");
+    if (!referer) return true; // Non-browser clients (curl, server-to-server) — allow
+    try {
+      const refOrigin = new URL(referer).origin;
+      const reqOrigin = new URL(request.url).origin;
+      return refOrigin === reqOrigin;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    const reqOrigin = new URL(request.url).origin;
+    return origin === reqOrigin;
+  } catch {
+    return false;
+  }
+}
+
 export function createHandlers(config: HandlersConfig) {
   const {
     providers,
@@ -142,6 +206,14 @@ export function createHandlers(config: HandlersConfig) {
     // GET /api/auth/session
     if (subPath === "/session" && request.method === "GET") {
       return handleSession(request);
+    }
+
+    // CSRF Origin check for all POST endpoints (defense-in-depth alongside SameSite cookies)
+    if (request.method === "POST" && !verifyCsrfOrigin(request)) {
+      return new Response(
+        JSON.stringify({ error: "CSRF origin check failed" }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
     }
 
     // POST /api/auth/logout
@@ -226,7 +298,7 @@ export function createHandlers(config: HandlersConfig) {
     const cookieHeader = request.headers.get("cookie");
     const storedState = parseCookieValue(cookieHeader, "oauth_state");
 
-    if (!code || !state || !storedState || state !== storedState) {
+    if (!code || !state || !storedState || !(await timingSafeEqual(state, storedState))) {
       return new Response(JSON.stringify({ error: "Invalid OAuth state" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -321,9 +393,8 @@ export function createHandlers(config: HandlersConfig) {
         serializeStateCookie("code_verifier", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
       ]);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "OAuth callback failed";
-      return new Response(JSON.stringify({ error: message }), {
+      console.error("[just-auth] OAuth callback error:", error);
+      return new Response(JSON.stringify({ error: "Authentication failed" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
@@ -465,9 +536,9 @@ export function createHandlers(config: HandlersConfig) {
         }
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Registration failed";
+      console.error("[just-auth] Registration error:", error);
       return new Response(
-        JSON.stringify({ error: message }),
+        JSON.stringify({ error: "Registration failed" }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -486,15 +557,14 @@ export function createHandlers(config: HandlersConfig) {
       }
 
       const user = await queries.getUserByEmailWithPassword(email);
-      if (!user || !user.passwordHash) {
-        return new Response(
-          JSON.stringify({ error: "Invalid email or password" }),
-          { status: 401, headers: { "Content-Type": "application/json" } }
-        );
-      }
 
-      const valid = await verifyPassword(password, user.passwordHash);
-      if (!valid) {
+      // Always run password verification to prevent timing-based user enumeration.
+      // When user doesn't exist, verify against a dummy hash so the response time
+      // is indistinguishable from a real verification.
+      const hashToVerify = user?.passwordHash ?? DUMMY_PASSWORD_HASH;
+      const valid = await verifyPassword(password, hashToVerify);
+
+      if (!user || !user.passwordHash || !valid) {
         return new Response(
           JSON.stringify({ error: "Invalid email or password" }),
           { status: 401, headers: { "Content-Type": "application/json" } }
@@ -512,9 +582,9 @@ export function createHandlers(config: HandlersConfig) {
         }
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Login failed";
+      console.error("[just-auth] Login error:", error);
       return new Response(
-        JSON.stringify({ error: message }),
+        JSON.stringify({ error: "Login failed" }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -615,9 +685,9 @@ export function createHandlers(config: HandlersConfig) {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to set role";
+      console.error("[just-auth] Set role error:", error);
       return new Response(
-        JSON.stringify({ error: message }),
+        JSON.stringify({ error: "Failed to set role" }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }

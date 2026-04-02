@@ -48,7 +48,7 @@ let migrated = false;
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const db = createD1Adapter(env.DB);
-    const baseUrl = env.BASE_URL || "https://sample-auth.anu-1moby.workers.dev";
+    const baseUrl = env.BASE_URL || "https://your-worker.your-subdomain.workers.dev";
 
     if (!migrated) {
       await migrate(db);

@@ -79,7 +79,7 @@
 
 ## Sample App (`sample-auth/`)
 
-Cloudflare Worker demo at https://sample-auth.anu.workers.dev
+Cloudflare Worker demo (deploy your own — see `sample-auth/README.md`)
 
 | File | Purpose |
 |------|---------|

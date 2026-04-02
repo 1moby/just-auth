@@ -4,7 +4,7 @@
 
 Lightweight, edge-native NextAuth alternative using Arctic for OAuth, raw SQL for D1/SQLite, and a NextAuth-compatible React API. < 200KB bundle, zero Node.js-specific dependencies, native Cloudflare Workers support.
 
-**Status: Implemented and deployed** — 92 tests passing, live demo at https://sample-auth.anu.workers.dev
+**Status: Implemented** — 285 tests passing across 17 files
 
 ## Architecture
 

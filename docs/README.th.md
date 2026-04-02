@@ -436,7 +436,7 @@ wrangler.jsonc:
 
 ## Demo
 
-[https://sample-auth.anu.workers.dev](https://sample-auth.anu.workers.dev)
+Deploy the sample app to Cloudflare Workers — see `sample-auth/` for instructions.
 
 ## โครงสร้างโปรเจค
 

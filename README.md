@@ -374,14 +374,10 @@ import type {
 } from "@1moby/just-auth";
 ```
 
-## Demo
-
-[https://sample-auth.anu.workers.dev](https://sample-auth.anu.workers.dev)
-
 ## Testing
 
 ```bash
-bun test  # 169 tests
+bun test  # 285 tests across 17 files
 ```
 
 ## License
