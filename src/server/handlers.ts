@@ -329,61 +329,100 @@ export function createHandlers(config: HandlersConfig) {
         );
       }
 
-      // Upsert user + account
+      // Look up existing user (by account, then by email)
       let user = await queries.getUserByAccount(providerId, profile.id);
+      let existingUserByEmail = null as Awaited<ReturnType<typeof queries.getUserByEmail>> | null;
 
-      if (!user) {
-        if (profile.email) {
-          const existingUser = await queries.getUserByEmail(profile.email);
-          if (existingUser) {
-            if (config.allowDangerousEmailAccountLinking) {
-              user = existingUser;
-              await queries.createAccount({
-                id: generateId(),
-                userId: existingUser.id,
-                providerId,
-                providerUserId: profile.id,
-                accessToken: tokens.accessToken,
-                refreshToken: tokens.refreshToken ?? null,
-                expiresAt: tokens.expiresAt ?? null,
-              });
-            } else {
-              return new Response(
-                JSON.stringify({ error: "OAuthAccountNotLinked", message: "Email already associated with another account" }),
-                { status: 403, headers: { "Content-Type": "application/json" } }
-              );
-            }
-          }
-        }
+      if (!user && profile.email) {
+        existingUserByEmail = await queries.getUserByEmail(profile.email);
+      }
 
-        if (!user) {
-          // Auto-create is opt-in. By default, OAuth login requires an existing account.
-          if (!config.oauthAutoCreateAccount) {
-            return new Response(
-              JSON.stringify({ error: "AccountNotFound", message: "No account found. Contact an administrator to create one." }),
-              { status: 403, headers: { "Content-Type": "application/json" } }
-            );
-          }
-          const userId = generateId();
-          const defaultRole = config.rbac?.defaultRole;
-          user = {
-            id: userId,
+      const existingUserId: string | null =
+        user?.id ?? (existingUserByEmail && config.allowDangerousEmailAccountLinking ? existingUserByEmail.id : null);
+
+      // Reject email-collision before invoking signIn (preserves 0.1.x behavior).
+      if (!user && existingUserByEmail && !config.allowDangerousEmailAccountLinking) {
+        return new Response(
+          JSON.stringify({ error: "OAuthAccountNotLinked", message: "Email already associated with another account" }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // Invoke signIn callback if configured.
+      let userOverrides: Record<string, unknown> = {};
+      if (config.callbacks?.signIn) {
+        const ctx = {
+          provider: providerId,
+          profile: {
+            id: profile.id,
             email: profile.email,
             name: profile.name,
             avatarUrl: profile.avatarUrl,
-            role: defaultRole ?? undefined,
-          };
-          await queries.createUser(user);
-          await queries.createAccount({
-            id: generateId(),
-            userId,
-            providerId,
-            providerUserId: profile.id,
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken ?? null,
-            expiresAt: tokens.expiresAt ?? null,
-          });
+          },
+          account: {
+            provider_id: providerId,
+            provider_user_id: profile.id,
+            access_token: tokens.accessToken,
+            refresh_token: tokens.refreshToken,
+            expires_at: tokens.expiresAt,
+          },
+          existingUserId,
+          request,
+        };
+        const result = await config.callbacks.signIn(ctx);
+        if (!result.allow) {
+          const errorPage = config.pages?.error ?? "/";
+          const reason = encodeURIComponent(result.reason ?? "SIGNIN_REJECTED");
+          const sep = errorPage.includes("?") ? "&" : "?";
+          return htmlRedirectWithCookies(`${errorPage}${sep}error=${reason}`, request, [
+            serializeStateCookie("oauth_state", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
+            serializeStateCookie("code_verifier", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
+          ]);
         }
+        if (result.userOverrides) userOverrides = result.userOverrides;
+      }
+
+      // Link account to existing email-matched user (dangerous linking case).
+      if (!user && existingUserByEmail && config.allowDangerousEmailAccountLinking) {
+        user = existingUserByEmail;
+        await queries.createAccount({
+          id: generateId(),
+          userId: existingUserByEmail.id,
+          providerId,
+          providerUserId: profile.id,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken ?? null,
+          expiresAt: tokens.expiresAt ?? null,
+        });
+      }
+
+      // Create new user if still none matched.
+      if (!user) {
+        if (!config.oauthAutoCreateAccount) {
+          return new Response(
+            JSON.stringify({ error: "AccountNotFound", message: "No account found. Contact an administrator to create one." }),
+            { status: 403, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        const userId = generateId();
+        const defaultRole = config.rbac?.defaultRole;
+        user = {
+          id: userId,
+          email: profile.email,
+          name: profile.name,
+          avatarUrl: profile.avatarUrl,
+          role: defaultRole ?? undefined,
+        };
+        await queries.createUser(user, userOverrides);
+        await queries.createAccount({
+          id: generateId(),
+          userId,
+          providerId,
+          providerUserId: profile.id,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken ?? null,
+          expiresAt: tokens.expiresAt ?? null,
+        });
       }
 
       const { token } = await sessionManager.createSession(user.id);
