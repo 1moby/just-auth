@@ -80,6 +80,11 @@ export type {
   SessionContextValue,
   RbacConfig,
   RoleDefinition,
+  AuthCallbacks,
+  SignInCallbackContext,
+  SignInCallbackResult,
+  SessionCallbackContext,
+  PagesConfig,
 } from "./types.ts";
 
 export { createGitHubProvider } from "./providers/github.ts";
