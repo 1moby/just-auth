@@ -204,6 +204,52 @@ createReactAuth({
 });
 ```
 
+## Hooks
+
+Two optional lifecycle callbacks let consumers intercept sign-in and customize the session response without forking the library. Both are plain async functions on `AuthConfig.callbacks`.
+
+### `signIn` — gate OAuth sign-in, inject extra columns
+
+Fires inside the OAuth callback handler, **after** token exchange and user lookup but **before** any user or account row is written. Return `{ allow: false, reason }` to abort (the user is redirected to `pages.error ?? "/"` with `?error=REASON`). Return `{ allow: true, userOverrides }` to continue; `userOverrides` is merged into the `users` INSERT as extra columns — only applied when a new user is being created. The base identity columns (`id`, `email`, `name`, `avatar_url`) cannot be overridden.
+
+```ts
+import type { AuthConfig } from "@1moby/just-auth";
+
+export const authConfig: AuthConfig = {
+  // ... providers, database, etc.
+  pages: { error: "/auth/error" },
+  callbacks: {
+    signIn: async (ctx) => {
+      if (!ctx.profile.email?.endsWith("@1moby.com")) {
+        return { allow: false, reason: "DOMAIN_BLOCKED" };
+      }
+      // Optional: look up invitation, attach org_id
+      return {
+        allow: true,
+        userOverrides: { org_id: "the-org-uuid" },
+      };
+    },
+  },
+};
+```
+
+Extra columns must already exist on the `users` table — the library never ALTERs existing tables. Column names are validated against `/^[a-zA-Z_][a-zA-Z0-9_]*$/` before being interpolated into the INSERT; values use parameter binding.
+
+### `session` — customize the `/api/auth/session` response
+
+Fires on every `GET /api/auth/session` call, after the session + user are loaded. Whatever you return becomes the response body verbatim (the default `{ user, session, accounts, permissions }` shape is bypassed entirely — include what you need).
+
+```ts
+callbacks: {
+  session: async ({ user, session }) => {
+    const roles = await fetchRolesFor(user.id);
+    return { user, roles, sessionExpiresAt: session.expiresAt };
+  },
+}
+```
+
+With no `callbacks.session` set, the default response shape is unchanged from 0.1.x.
+
 ## RBAC
 
 Supports multi-role per user, role inheritance, and deny rules — all backward-compatible with single-role setups.
