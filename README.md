@@ -210,7 +210,7 @@ Two optional lifecycle callbacks let consumers intercept sign-in and customize t
 
 ### `signIn` — gate OAuth sign-in, inject extra columns
 
-Fires inside the OAuth callback handler, **after** token exchange and user lookup but **before** any user or account row is written. Return `{ allow: false, reason }` to abort (the user is redirected to `pages.error ?? "/"` with `?error=REASON`). Return `{ allow: true, userOverrides }` to continue; `userOverrides` is merged into the `users` INSERT as extra columns — only applied when a new user is being created. The base identity columns (`id`, `email`, `name`, `avatar_url`) cannot be overridden.
+Fires inside the OAuth callback handler, **after** token exchange and user lookup but **before** any user or account row is written. Return `{ allow: false, reason }` to abort (the user is redirected to `pages.error ?? "/"` with `?error=REASON`). Return `{ allow: true, userOverrides }` to continue; `userOverrides` is merged into the `users` INSERT as extra columns — only applied when a new user is being created. The base identity columns (`id`, `email`, `name`, `avatar_url`) cannot be overridden. The `role` column IS overridable — you can assign an initial role to the new user via `userOverrides: { role: "admin" }`. Use with care; the library does not validate role names.
 
 ```ts
 import type { AuthConfig } from "@1moby/just-auth";

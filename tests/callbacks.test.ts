@@ -213,6 +213,23 @@ describe("callbacks.signIn", () => {
     expect("org_id" in users[0]!).toBe(false);
   });
 
+  it("falls back to '/' when pages.error is an external URL (open-redirect guard)", async () => {
+    const handlers = buildHandlers(
+      db,
+      { signIn: async () => ({ allow: false, reason: "BAD" }) },
+      { error: "https://evil.example.com/phish" }
+    );
+
+    const req = new Request(
+      "http://localhost/api/auth/callback/github?code=c&state=s",
+      { headers: { cookie: "oauth_state=s" } }
+    );
+    const res = await handlers.handleRequest(req);
+    const html = await res!.text();
+    expect(html).not.toContain("evil.example.com");
+    expect(html).toContain("/?error=BAD");
+  });
+
   it("preserves extra provider-specific fields on profile in the callback context", async () => {
     // Swap in a provider that returns an extra field
     const cookieConfig = resolveCookieConfig({ secure: false });

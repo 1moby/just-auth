@@ -372,7 +372,8 @@ export function createHandlers(config: HandlersConfig) {
         };
         const result = await config.callbacks.signIn(ctx);
         if (!result.allow) {
-          const errorPage = config.pages?.error ?? "/";
+          const rawError = config.pages?.error ?? "/";
+          const errorPage = isSafeRedirect(rawError, request) ? rawError : "/";
           const reason = encodeURIComponent(result.reason ?? "SIGNIN_REJECTED");
           const sep = errorPage.includes("?") ? "&" : "?";
           return htmlRedirectWithCookies(`${errorPage}${sep}error=${reason}`, request, [
