@@ -354,6 +354,7 @@ export function createHandlers(config: HandlersConfig) {
         const ctx = {
           provider: providerId,
           profile: {
+            ...profile,
             id: profile.id,
             email: profile.email,
             name: profile.name,

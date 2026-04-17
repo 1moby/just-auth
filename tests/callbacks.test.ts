@@ -86,6 +86,7 @@ describe("callbacks.signIn", () => {
 
     expect(db.tables.get("users")).toHaveLength(0);
     expect(db.tables.get("sessions")).toHaveLength(0);
+    expect(db.tables.get("accounts")).toHaveLength(0);
   });
 
   it("defaults to '/' and reason=SIGNIN_REJECTED when pages.error and reason are unset", async () => {
@@ -130,5 +131,136 @@ describe("callbacks.signIn", () => {
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(500);
     expect(db.tables.get("users")).toHaveLength(0);
+  });
+
+  it("provides existingUserId to callback when user already exists (account match)", async () => {
+    // Pre-populate: user + account already in DB (returning-user scenario)
+    db.tables.set("users", [
+      { id: "existing-u1", email: "user@example.com", name: "Test", avatar_url: null },
+    ]);
+    db.tables.set("accounts", [
+      { id: "existing-a1", user_id: "existing-u1", provider_id: "github", provider_user_id: "p-123", access_token: null, refresh_token: null, expires_at: null },
+    ]);
+
+    let captured: SignInCallbackContext | null = null;
+    const handlers = buildHandlers(db, {
+      signIn: async (ctx) => {
+        captured = ctx;
+        return { allow: true, userOverrides: { org_id: "should-be-ignored" } };
+      },
+    });
+
+    const req = new Request(
+      "http://localhost/api/auth/callback/github?code=c&state=s",
+      { headers: { cookie: "oauth_state=s" } }
+    );
+    const res = await handlers.handleRequest(req);
+    expect(res!.status).toBe(200);
+    expect(captured).not.toBeNull();
+    expect(captured!.existingUserId).toBe("existing-u1");
+
+    // userOverrides must be ignored for existing users
+    const users = db.tables.get("users")!;
+    expect(users).toHaveLength(1); // no duplicate user created
+    expect("org_id" in users[0]!).toBe(false);
+  });
+
+  it("provides existingUserId via email-link path and ignores userOverrides", async () => {
+    // Pre-populate: user with matching email but no account for this provider (email-link scenario)
+    db.tables.set("users", [
+      { id: "linked-u1", email: "user@example.com", name: "Test", avatar_url: null },
+    ]);
+
+    const cookieConfig = resolveCookieConfig({ secure: false });
+    const queries = createQueries(db);
+    const sessionManager = createSessionManager(queries);
+
+    let captured: SignInCallbackContext | null = null;
+    const handlers = createHandlers({
+      providers: new Map([["github", createMockProvider("github")]]),
+      sessionManager,
+      cookieConfig,
+      queries,
+      basePath: "/api/auth",
+      sessionMaxAge: 30 * 86400,
+      oauthAutoCreateAccount: true,
+      allowDangerousEmailAccountLinking: true,
+      callbacks: {
+        signIn: async (ctx) => {
+          captured = ctx;
+          return { allow: true, userOverrides: { org_id: "should-be-ignored" } };
+        },
+      },
+    });
+
+    const req = new Request(
+      "http://localhost/api/auth/callback/github?code=c&state=s",
+      { headers: { cookie: "oauth_state=s" } }
+    );
+    const res = await handlers.handleRequest(req);
+    expect(res!.status).toBe(200);
+    expect(captured).not.toBeNull();
+    expect(captured!.existingUserId).toBe("linked-u1");
+
+    // New account row should be created linking the existing user
+    const accounts = db.tables.get("accounts")!;
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]!.user_id).toBe("linked-u1");
+
+    // userOverrides must be ignored — no duplicate user and no org_id on existing user
+    const users = db.tables.get("users")!;
+    expect(users).toHaveLength(1);
+    expect("org_id" in users[0]!).toBe(false);
+  });
+
+  it("preserves extra provider-specific fields on profile in the callback context", async () => {
+    // Swap in a provider that returns an extra field
+    const cookieConfig = resolveCookieConfig({ secure: false });
+    const queries = createQueries(db);
+    const sessionManager = createSessionManager(queries);
+
+    const customProvider: OAuthProvider = {
+      id: "google",
+      createAuthorizationURL(state: string): URL {
+        return new URL(`https://p.example.com/auth?state=${state}`);
+      },
+      async validateAuthorizationCode(_code: string): Promise<OAuthTokens> {
+        return { accessToken: "tok" };
+      },
+      async getUserProfile(_t: string): Promise<OAuthUserProfile> {
+        // Cast allows returning an extra field beyond the typed shape
+        return {
+          id: "g-42",
+          email: "u@1moby.com",
+          name: "U",
+          avatarUrl: null,
+          // @ts-expect-error provider-specific extra
+          hd: "1moby.com",
+        };
+      },
+    };
+
+    let captured: SignInCallbackContext | null = null;
+    const handlers = createHandlers({
+      providers: new Map([["google", customProvider]]),
+      sessionManager,
+      cookieConfig,
+      queries,
+      basePath: "/api/auth",
+      sessionMaxAge: 30 * 86400,
+      oauthAutoCreateAccount: true,
+      callbacks: {
+        signIn: async (ctx) => { captured = ctx; return { allow: true }; },
+      },
+    });
+
+    const req = new Request(
+      "http://localhost/api/auth/callback/google?code=c&state=s",
+      { headers: { cookie: "oauth_state=s" } }
+    );
+    const res = await handlers.handleRequest(req);
+    expect(res!.status).toBe(200);
+    expect(captured).not.toBeNull();
+    expect(captured!.profile.hd).toBe("1moby.com");
   });
 });
