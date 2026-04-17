@@ -108,6 +108,10 @@ export interface AuthConfig {
   passwordMinLength?: number;
   /** Restrict allowed emails. Array of domain strings (e.g. ["@1moby.com"]) or a function returning boolean. */
   allowedEmails?: string[] | ((email: string) => boolean);
+  /** Custom page paths (e.g. error redirect target). */
+  pages?: PagesConfig;
+  /** Lifecycle callbacks invoked during sign-in and session resolution. */
+  callbacks?: AuthCallbacks;
 }
 
 export interface AuthInstance {
@@ -125,6 +129,61 @@ export interface SessionManager {
   createSession(userId: string): Promise<{ session: Session; token: string }>;
   validateSession(token: string): Promise<SessionValidationResult | null>;
   invalidateSession(sessionId: string): Promise<void>;
+}
+
+export interface PagesConfig {
+  /** Path (relative or absolute) to redirect to on signIn-callback rejection. Default: "/" */
+  error?: string;
+}
+
+export interface SignInCallbackContext {
+  /** Provider id, e.g. 'google'. */
+  provider: string;
+  /** Raw profile returned by provider.getUserProfile(). May carry provider-specific extra fields. */
+  profile: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    avatarUrl: string | null;
+    [k: string]: unknown;
+  };
+  /** OAuth account info (provider, provider_user_id, tokens). */
+  account: {
+    provider_id: string;
+    provider_user_id: string;
+    access_token?: string;
+    refresh_token?: string;
+    expires_at?: number;
+  };
+  /** Id of an existing user matched by account or email. Null if a new user would be created. */
+  existingUserId: string | null;
+  /** Request context for IP/headers/audit callers. */
+  request: Request;
+}
+
+export interface SignInCallbackResult {
+  /** false → abort sign-in; the reason surfaces in the error-page query string. */
+  allow: boolean;
+  /** Extra columns to pass to createUser. Only applied when existingUserId is null. */
+  userOverrides?: Record<string, unknown>;
+  /** Reason code for rejection, URL-encoded into `?error=...`. Default: 'SIGNIN_REJECTED'. */
+  reason?: string;
+}
+
+export interface SessionCallbackContext {
+  session: { id: string; userId: string; expiresAt: number };
+  user: { id: string; email: string | null; name: string | null; avatarUrl: string | null };
+}
+
+export interface AuthCallbacks {
+  /** Fires after OAuth token exchange, before createUser. Return { allow: false, reason } to abort. */
+  signIn?: (ctx: SignInCallbackContext) =>
+    | Promise<SignInCallbackResult>
+    | SignInCallbackResult;
+  /** Fires inside GET /api/auth/session. Whatever you return replaces the default response body. */
+  session?: (ctx: SessionCallbackContext) =>
+    | Promise<Record<string, unknown>>
+    | Record<string, unknown>;
 }
 
 export type SessionStatus = "loading" | "authenticated" | "unauthenticated";
