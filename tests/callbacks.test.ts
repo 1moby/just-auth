@@ -344,3 +344,56 @@ describe("callbacks.session", () => {
     expect(typeof capturedExpiresAt).toBe("number");
   });
 });
+
+describe("no callbacks = 0.1.x behavior", () => {
+  let db: ReturnType<typeof createMockDatabase>;
+  beforeEach(() => {
+    db = createMockDatabase();
+    db.tables.set("users", []);
+    db.tables.set("accounts", []);
+    db.tables.set("sessions", []);
+  });
+
+  it("OAuth callback creates user + session with default columns only", async () => {
+    const handlers = buildHandlers(db); // no callbacks
+    const req = new Request(
+      "http://localhost/api/auth/callback/github?code=c&state=s",
+      { headers: { cookie: "oauth_state=s" } }
+    );
+    const res = await handlers.handleRequest(req);
+    expect(res!.status).toBe(200);
+    const users = db.tables.get("users")!;
+    expect(users).toHaveLength(1);
+    expect(Object.keys(users[0]!).sort()).toEqual(
+      ["avatar_url", "email", "id", "name"].sort()
+    );
+  });
+
+  it("GET /session returns default shape (user, session, accounts)", async () => {
+    db.tables.set("users", [
+      { id: "u1", email: "alice@example.com", name: "Alice", avatar_url: null },
+    ]);
+    const cookieConfig = resolveCookieConfig({ secure: false });
+    const queries = createQueries(db);
+    const sessionManager = createSessionManager(queries);
+    const { token } = await sessionManager.createSession("u1");
+
+    const handlers = createHandlers({
+      providers: new Map(),
+      sessionManager,
+      cookieConfig,
+      queries,
+      basePath: "/api/auth",
+      sessionMaxAge: 30 * 86400,
+    });
+
+    const req = new Request("http://localhost/api/auth/session", {
+      headers: { cookie: `__Host-auth_session=${token}` },
+    });
+    const res = await handlers.handleRequest(req);
+    const body = await res!.json();
+    expect(body.user.id).toBe("u1");
+    expect(body.session).toBeTruthy();
+    expect(Array.isArray(body.accounts)).toBe(true);
+  });
+});
