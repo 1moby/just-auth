@@ -23,6 +23,8 @@ export function createReactAuth(config: AuthConfig): AuthInstance {
     passwordMinLength: config.passwordMinLength,
     allowedEmails: config.allowedEmails,
     rbac: config.rbac,
+    callbacks: config.callbacks,
+    pages: config.pages,
   });
 
   async function hasPermission(request: Request, permission: string): Promise<boolean> {

@@ -1,5 +1,7 @@
 import type {
   AuthConfig,
+  AuthCallbacks,
+  PagesConfig,
   OAuthProvider,
   SessionManager,
 } from "../types.ts";
@@ -145,6 +147,8 @@ export interface HandlersConfig {
   passwordMinLength?: number;
   allowedEmails?: string[] | ((email: string) => boolean);
   onAuthSuccess?: (user: { id: string }, request: Request) => string | undefined;
+  callbacks?: AuthCallbacks;
+  pages?: PagesConfig;
 }
 
 function isEmailAllowed(email: string | null, rule?: string[] | ((email: string) => boolean)): boolean {
