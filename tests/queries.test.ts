@@ -295,6 +295,17 @@ describe("Database Queries", () => {
       const rows = db.tables.get("users")!;
       expect(rows[0]!.email).toBe("e@f.com");
     });
+
+    it("does not let extraColumns override base identity columns", async () => {
+      await q.createUser(
+        { id: "real-id", email: "real@x.com", name: "Real", avatarUrl: null },
+        { id: "attacker-id", email: "attacker@y.com", org_id: "org-7" }
+      );
+      const rows = db.tables.get("users")!;
+      expect(rows[0]!.id).toBe("real-id");
+      expect(rows[0]!.email).toBe("real@x.com");
+      expect(rows[0]!.org_id).toBe("org-7");
+    });
   });
 
   describe("Table prefix", () => {

@@ -134,7 +134,12 @@ export function createQueries(db: DatabaseAdapter, prefix?: string): Queries {
         avatar_url: user.avatarUrl,
       };
       if (user.role !== undefined) base.role = user.role;
-      const merged: Record<string, unknown> = { ...base, ...(extraColumns ?? {}) };
+      const RESERVED = new Set(["id", "email", "name", "avatar_url"]);
+      const safeExtra: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(extraColumns ?? {})) {
+        if (!RESERVED.has(k)) safeExtra[k] = v;
+      }
+      const merged: Record<string, unknown> = { ...base, ...safeExtra };
 
       const parts: string[] = [];
       const values: unknown[] = [];
