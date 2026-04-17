@@ -255,6 +255,48 @@ describe("Database Queries", () => {
     });
   });
 
+  describe("createUser extraColumns", () => {
+    it("accepts extra columns and writes them to the INSERT", async () => {
+      await q.createUser(
+        { id: "u1", email: "x@y.com", name: "X", avatarUrl: null },
+        { org_id: "org-42", tenant: "acme" }
+      );
+      const rows = db.tables.get("users")!;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.org_id).toBe("org-42");
+      expect(rows[0]!.tenant).toBe("acme");
+      expect(rows[0]!.id).toBe("u1");
+    });
+
+    it("ignores undefined values in extraColumns", async () => {
+      await q.createUser(
+        { id: "u2", email: "a@b.com", name: null, avatarUrl: null },
+        { org_id: "org-1", maybe: undefined }
+      );
+      const rows = db.tables.get("users")!;
+      expect(rows[0]!.org_id).toBe("org-1");
+      expect("maybe" in rows[0]!).toBe(false);
+    });
+
+    it("rejects invalid column names", async () => {
+      await expect(
+        q.createUser(
+          { id: "u3", email: "c@d.com", name: null, avatarUrl: null },
+          { "bad column": "x" }
+        )
+      ).rejects.toThrow(/invalid column name/i);
+    });
+
+    it("omitting extraColumns preserves existing behavior", async () => {
+      const user = await q.createUser({
+        id: "u4", email: "e@f.com", name: "E", avatarUrl: null,
+      });
+      expect(user.id).toBe("u4");
+      const rows = db.tables.get("users")!;
+      expect(rows[0]!.email).toBe("e@f.com");
+    });
+  });
+
   describe("Table prefix", () => {
     it("should use prefixed table names", async () => {
       const pq = createQueries(db, "app_");

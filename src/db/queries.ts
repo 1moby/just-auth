@@ -97,7 +97,10 @@ export function resolveTableNames(prefix?: string): TableNames {
 
 export interface Queries {
   tableNames: TableNames;
-  createUser(user: { id: string; email: string | null; name: string | null; avatarUrl: string | null; role?: string }): Promise<User>;
+  createUser(
+    user: { id: string; email: string | null; name: string | null; avatarUrl: string | null; role?: string },
+    extraColumns?: Record<string, unknown>
+  ): Promise<User>;
   createUserWithPassword(user: { id: string; email: string; name: string | null; avatarUrl: string | null; passwordHash: string; role?: string }): Promise<void>;
   getUserById(id: string): Promise<User | null>;
   getUserByEmail(email: string): Promise<User | null>;
@@ -122,18 +125,34 @@ export function createQueries(db: DatabaseAdapter, prefix?: string): Queries {
 
     // ── Users ──
 
-    async createUser(user) {
-      if (user.role) {
-        await db
-          .prepare(`INSERT INTO ${t.users} (id, email, name, avatar_url, role) VALUES (?, ?, ?, ?, ?)`)
-          .bind(user.id, user.email, user.name, user.avatarUrl, user.role)
-          .run();
-      } else {
-        await db
-          .prepare(`INSERT INTO ${t.users} (id, email, name, avatar_url) VALUES (?, ?, ?, ?)`)
-          .bind(user.id, user.email, user.name, user.avatarUrl)
-          .run();
+    async createUser(user, extraColumns) {
+      const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+      const base: Record<string, unknown> = {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatar_url: user.avatarUrl,
+      };
+      if (user.role !== undefined) base.role = user.role;
+      const merged: Record<string, unknown> = { ...base, ...(extraColumns ?? {}) };
+
+      const parts: string[] = [];
+      const values: unknown[] = [];
+      for (const [key, value] of Object.entries(merged)) {
+        if (value === undefined) continue;
+        if (!IDENT_RE.test(key)) {
+          throw new Error(`[just-auth] Invalid column name "${key}" in createUser extraColumns`);
+        }
+        parts.push(key);
+        values.push(value);
       }
+
+      const placeholders = parts.map(() => "?").join(", ");
+      await db
+        .prepare(`INSERT INTO ${t.users} (${parts.join(", ")}) VALUES (${placeholders})`)
+        .bind(...values)
+        .run();
+
       return { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, role: user.role };
     },
 
