@@ -264,3 +264,83 @@ describe("callbacks.signIn", () => {
     expect(captured!.profile.hd).toBe("1moby.com");
   });
 });
+
+describe("callbacks.session", () => {
+  let db: ReturnType<typeof createMockDatabase>;
+  beforeEach(() => {
+    db = createMockDatabase();
+    db.tables.set("users", []);
+    db.tables.set("accounts", []);
+    db.tables.set("sessions", []);
+  });
+
+  it("returns the callback's output in place of the default session body", async () => {
+    db.tables.set("users", [
+      { id: "u1", email: "alice@example.com", name: "Alice", avatar_url: null },
+    ]);
+    const cookieConfig = resolveCookieConfig({ secure: false });
+    const queries = createQueries(db);
+    const sessionManager = createSessionManager(queries);
+    const { token } = await sessionManager.createSession("u1");
+
+    const handlers = createHandlers({
+      providers: new Map(),
+      sessionManager,
+      cookieConfig,
+      queries,
+      basePath: "/api/auth",
+      sessionMaxAge: 30 * 86400,
+      callbacks: {
+        session: async ({ user, session }) => ({
+          user,
+          custom: "hello",
+          sessionId: session.id,
+        }),
+      },
+    });
+
+    const req = new Request("http://localhost/api/auth/session", {
+      headers: { cookie: `__Host-auth_session=${token}` },
+    });
+    const res = await handlers.handleRequest(req);
+    expect(res!.status).toBe(200);
+    const body = await res!.json();
+    expect(body.custom).toBe("hello");
+    expect(body.user.id).toBe("u1");
+    expect(body.sessionId).toBeTruthy();
+    expect("accounts" in body).toBe(false);
+    expect("permissions" in body).toBe(false);
+  });
+
+  it("receives session with expiresAt as a number (unix ms)", async () => {
+    db.tables.set("users", [
+      { id: "u1", email: "alice@example.com", name: "Alice", avatar_url: null },
+    ]);
+    const cookieConfig = resolveCookieConfig({ secure: false });
+    const queries = createQueries(db);
+    const sessionManager = createSessionManager(queries);
+    const { token } = await sessionManager.createSession("u1");
+
+    let capturedExpiresAt: unknown = null;
+    const handlers = createHandlers({
+      providers: new Map(),
+      sessionManager,
+      cookieConfig,
+      queries,
+      basePath: "/api/auth",
+      sessionMaxAge: 30 * 86400,
+      callbacks: {
+        session: async ({ session }) => {
+          capturedExpiresAt = session.expiresAt;
+          return { ok: true };
+        },
+      },
+    });
+
+    const req = new Request("http://localhost/api/auth/session", {
+      headers: { cookie: `__Host-auth_session=${token}` },
+    });
+    await handlers.handleRequest(req);
+    expect(typeof capturedExpiresAt).toBe("number");
+  });
+});

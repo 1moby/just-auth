@@ -466,6 +466,28 @@ export function createHandlers(config: HandlersConfig) {
       });
     }
 
+    // Session callback: if configured, its return value replaces the default body entirely.
+    if (config.callbacks?.session) {
+      const ctx = {
+        session: {
+          id: result.session.id,
+          userId: result.session.userId,
+          expiresAt: result.session.expiresAt.getTime(),
+        },
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          name: result.user.name,
+          avatarUrl: result.user.avatarUrl,
+        },
+      };
+      const body = await config.callbacks.session(ctx);
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const accounts = await queries.getAccountsByUserId(result.user.id);
     const accountList = accounts.map((a) => ({ providerId: a.providerId }));
 
