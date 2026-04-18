@@ -94,7 +94,7 @@ const auth = createReactAuth({
   database: db,
   credentials: true,
   oauthAutoCreateAccount: true,
-  allowDangerousEmailAccountLinking: true,
+  allowEmailAccountLinking: true,
 });
 
 // Handle auth routes
@@ -164,7 +164,7 @@ createReactAuth({
   credentials: true,                   // enable email/password auth
   allowRegistration: true,             // allow self-registration (default: true when credentials enabled)
   oauthAutoCreateAccount: true,        // auto-create users on OAuth login (default: false)
-  allowDangerousEmailAccountLinking: true,  // link accounts by email match
+  allowEmailAccountLinking: true,      // link accounts by verified email match (default: false)
   passwordMinLength: 8,               // default: 8, max: 128
 
   // Email restriction
@@ -203,6 +203,34 @@ createReactAuth({
   },
 });
 ```
+
+## Email-based account linking
+
+When a user signs in via OAuth and their `(provider_id, provider_user_id)` has no matching row in `accounts`, but their profile email matches an existing user, the default behavior is to reject with `OAuthAccountNotLinked` (HTTP 403). Set `allowEmailAccountLinking: true` to instead link the incoming OAuth account to the existing user.
+
+```ts
+createReactAuth({
+  // ...
+  allowEmailAccountLinking: true,
+});
+```
+
+**Trust implication.** Linking by email is safe only when you trust the identity provider to verify the email (e.g. Google Workspace with a hosted-domain restriction, or a corporate IdP). If a provider lets users sign up with unverified emails, a malicious user could claim ownership of another user's email and get their account linked.
+
+When a link occurs, the `signIn` callback (if set) is invoked with `ctx.emailLinked === true` and `ctx.existingUserId` set to the linked user's id — useful for audit logs:
+
+```ts
+callbacks: {
+  signIn: async (ctx) => {
+    if (ctx.emailLinked) {
+      await auditLog.record({ event: "oauth_account_linked", userId: ctx.existingUserId, provider: ctx.provider });
+    }
+    return { allow: true };
+  },
+}
+```
+
+The older `allowDangerousEmailAccountLinking` flag still works as an alias for backward compatibility but is deprecated; prefer `allowEmailAccountLinking` in new code.
 
 ## Hooks
 
