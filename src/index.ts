@@ -19,6 +19,7 @@ export function createReactAuth(config: AuthConfig): AuthInstance {
     credentials: config.credentials,
     allowRegistration: config.allowRegistration,
     oauthAutoCreateAccount: config.oauthAutoCreateAccount,
+    allowEmailAccountLinking: config.allowEmailAccountLinking,
     allowDangerousEmailAccountLinking: config.allowDangerousEmailAccountLinking,
     passwordMinLength: config.passwordMinLength,
     allowedEmails: config.allowedEmails,

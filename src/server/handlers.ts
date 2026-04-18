@@ -142,6 +142,8 @@ export interface HandlersConfig {
   credentials?: boolean;
   allowRegistration?: boolean;
   oauthAutoCreateAccount?: boolean;
+  allowEmailAccountLinking?: boolean;
+  /** @deprecated Use `allowEmailAccountLinking`. */
   allowDangerousEmailAccountLinking?: boolean;
   rbac?: RbacConfig;
   passwordMinLength?: number;
@@ -337,11 +339,16 @@ export function createHandlers(config: HandlersConfig) {
         existingUserByEmail = await queries.getUserByEmail(profile.email);
       }
 
-      const existingUserId: string | null =
-        user?.id ?? (existingUserByEmail && config.allowDangerousEmailAccountLinking ? existingUserByEmail.id : null);
+      const emailLinkingAllowed = Boolean(
+        config.allowEmailAccountLinking ?? config.allowDangerousEmailAccountLinking
+      );
 
-      // Reject email-collision before invoking signIn (preserves 0.1.x behavior).
-      if (!user && existingUserByEmail && !config.allowDangerousEmailAccountLinking) {
+      const willLinkByEmail = !user && !!existingUserByEmail && emailLinkingAllowed;
+      const existingUserId: string | null =
+        user?.id ?? (willLinkByEmail ? existingUserByEmail!.id : null);
+
+      // Reject email-collision before invoking signIn (preserves pre-0.3 behavior).
+      if (!user && existingUserByEmail && !emailLinkingAllowed) {
         return new Response(
           JSON.stringify({ error: "OAuthAccountNotLinked", message: "Email already associated with another account" }),
           { status: 403, headers: { "Content-Type": "application/json" } }
@@ -368,6 +375,7 @@ export function createHandlers(config: HandlersConfig) {
             expires_at: tokens.expiresAt,
           },
           existingUserId,
+          emailLinked: willLinkByEmail,
           request,
         };
         const result = await config.callbacks.signIn(ctx);
@@ -384,12 +392,12 @@ export function createHandlers(config: HandlersConfig) {
         if (result.userOverrides) userOverrides = result.userOverrides;
       }
 
-      // Link account to existing email-matched user (dangerous linking case).
-      if (!user && existingUserByEmail && config.allowDangerousEmailAccountLinking) {
+      // Link account to existing email-matched user.
+      if (willLinkByEmail) {
         user = existingUserByEmail;
         await queries.createAccount({
           id: generateId(),
-          userId: existingUserByEmail.id,
+          userId: existingUserByEmail!.id,
           providerId,
           providerUserId: profile.id,
           accessToken: tokens.accessToken,

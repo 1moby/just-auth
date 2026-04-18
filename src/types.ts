@@ -100,6 +100,13 @@ export interface AuthConfig {
   allowRegistration?: boolean;
   /** Allow OAuth login to auto-create user accounts. Default: false — users must exist first */
   oauthAutoCreateAccount?: boolean;
+  /**
+   * When true, if no account exists for (provider_id, provider_user_id) but the OAuth profile's
+   * email matches an existing user, auto-link by creating the accounts row against that user.
+   * Default: false. Only safe when the identity provider verifies email (e.g. Google Workspace).
+   */
+  allowEmailAccountLinking?: boolean;
+  /** @deprecated Renamed to `allowEmailAccountLinking`. Kept for 0.2.x compatibility; either flag enables linking. */
   allowDangerousEmailAccountLinking?: boolean;
   rbac?: RbacConfig;
   /** Prefix for database table names, e.g. "myapp_" → myapp_users, myapp_accounts, myapp_sessions */
@@ -157,6 +164,8 @@ export interface SignInCallbackContext {
   };
   /** Id of an existing user matched by account or email. Null if a new user would be created. */
   existingUserId: string | null;
+  /** True when this sign-in just auto-linked the OAuth account to an existing user by email. */
+  emailLinked?: boolean;
   /** Request context for IP/headers/audit callers. */
   request: Request;
 }
