@@ -133,7 +133,8 @@ export function createMockCH(): MockCH {
       // append-only: no dedup
       return all;
     }
-    // ReplacingMergeTree[*]: keep latest by versionCol per orderBy key
+    // ReplacingMergeTree[*]: keep latest by versionCol per orderBy key.
+    // Iterate in INSERT order; tie-break on equal versions by keeping the later write.
     const byKey = new Map<string, Record<string, unknown>>();
     for (const row of all) {
       const key = meta.orderBy.map((c) => JSON.stringify(row[c])).join("|");
@@ -146,12 +147,30 @@ export function createMockCH(): MockCH {
       if (!vc) {
         byKey.set(key, row); // last write wins
       } else {
-        const a = Number(cur[vc] ?? 0);
-        const b = Number(row[vc] ?? 0);
-        if (b >= a) byKey.set(key, row);
+        if (compareVersions(row[vc], cur[vc]) >= 0) {
+          byKey.set(key, row);
+        }
       }
     }
     return [...byKey.values()];
+  }
+
+  /** Compare two version-column values. Supports numbers and ISO date strings.
+   *  Returns 1 if a > b, -1 if a < b, 0 if equal. */
+  function compareVersions(a: unknown, b: unknown): number {
+    if (a === b) return 0;
+    if (a == null) return -1;
+    if (b == null) return 1;
+    // numbers
+    const an = Number(a);
+    const bn = Number(b);
+    if (!Number.isNaN(an) && !Number.isNaN(bn)) {
+      return an < bn ? -1 : an > bn ? 1 : 0;
+    }
+    // strings (ISO timestamps sort lexically)
+    const as = String(a);
+    const bs = String(b);
+    return as < bs ? -1 : as > bs ? 1 : 0;
   }
 
   // ─── SELECT execution ────────────────────────────────────────────

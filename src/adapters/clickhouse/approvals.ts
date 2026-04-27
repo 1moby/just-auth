@@ -298,11 +298,12 @@ export function createApprovalsApi(opts: ApprovalsOptions): ApprovalsApi {
           if (!args.delegateTo) {
             throw new Error("delegateTo required for decision='delegated'");
           }
-          // Insert delegate AT current step (so the delegate sees this step next)
+          // Delegate replaces the current approver. The chain length is unchanged;
+          // currentStep stays put so the delegate is now the active approver.
           newChain = [
             ...req.chain.slice(0, req.currentStep),
             args.delegateTo,
-            ...req.chain.slice(req.currentStep),
+            ...req.chain.slice(req.currentStep + 1),
           ];
           nextApprover = args.delegateTo;
           break;

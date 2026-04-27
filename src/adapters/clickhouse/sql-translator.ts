@@ -136,15 +136,14 @@ function rewriteSelect(sql: string): { query: string; paramCount: number } {
 }
 
 /** Inject FINAL on every direct table reference in the SQL that names one of
- * the FINAL-managed tables. Conservative match: only after FROM or JOIN. */
+ * the FINAL-managed tables. Conservative match: only after FROM or JOIN, and
+ * we don't try to parse aliases — the framework's queries don't use them. */
 export function injectFinal(sql: string, finalTables: Set<string>): string {
   return sql.replace(
-    /\b(FROM|JOIN)\s+([a-zA-Z0-9_]+)(?:\s+([a-zA-Z]))?/gi,
-    (whole, kw: string, table: string, alias?: string) => {
+    /\b(FROM|JOIN)\s+([a-zA-Z0-9_]+)\b/gi,
+    (whole, kw: string, table: string) => {
       if (!finalTables.has(table)) return whole;
-      // skip if FINAL already present in next 6 chars after match
-      const aliasPart = alias ? ` ${alias}` : "";
-      return `${kw} ${table}${aliasPart} FINAL`;
+      return `${kw} ${table} FINAL`;
     }
   );
 }
