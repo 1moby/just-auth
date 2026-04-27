@@ -163,14 +163,17 @@ ORDER BY (org_id, id)`
 ORDER BY (id)`
   );
 
-  // User role grants
+  // User role grants — org_id and dept_id participate in ORDER BY, so they
+  // must be non-nullable. We use empty-string sentinel '' for "no org / no
+  // dept" rather than enabling allow_nullable_key (which would also affect
+  // sparseness / merge cost).
   stmts.push(
     `CREATE TABLE IF NOT EXISTS ${ident(t.userRoleGrants)}${cc} (
   id String,
   user_id String,
   role_id String,
-  org_id Nullable(String),
-  dept_id Nullable(String),
+  org_id String DEFAULT '',
+  dept_id String DEFAULT '',
   granted_by String,
   expires_at Nullable(DateTime64(3, 'UTC')),
   created_at DateTime64(3, 'UTC') DEFAULT now64(3),
@@ -218,14 +221,21 @@ PARTITION BY toYYYYMM(decided_at)
 ORDER BY (request_id, step, decided_at)`
   );
 
-  // Sessions Dictionary — hot path for token lookup
+  // Sessions Dictionary — hot path for token lookup. CH dictionaries' SOURCE
+  // QUERY is parsed without inheriting the caller's default database, so the
+  // table reference inside the QUERY string itself must be fully qualified
+  // when a database is in play. Tested across CH 24.8 / 25.3 / latest.
+  const fromTable = opts.database
+    ? `${ident(opts.database)}.${ident(t.sessions)}`
+    : ident(t.sessions);
+  const dbClause = opts.database ? `DB '${ident(opts.database)}' ` : "";
   stmts.push(
     `CREATE DICTIONARY IF NOT EXISTS sessions_dict${cc} (
   token_hash String,
   user_id String,
   expires_at DateTime64(3, 'UTC')
 ) PRIMARY KEY token_hash
-SOURCE(CLICKHOUSE(QUERY 'SELECT token_hash, user_id, expires_at FROM ${ident(t.sessions)} FINAL WHERE _deleted = 0'))
+SOURCE(CLICKHOUSE(${dbClause}QUERY 'SELECT token_hash, user_id, expires_at FROM ${fromTable} FINAL WHERE _deleted = 0'))
 LIFETIME(MIN 5 MAX 15)
 LAYOUT(HASHED())`
   );

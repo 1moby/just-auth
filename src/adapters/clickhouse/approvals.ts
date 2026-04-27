@@ -6,6 +6,7 @@ import type {
   ApprovalStatus,
 } from "./types.ts";
 import type { RbacApi } from "./rbac.ts";
+import { chDate, chDateNow, uuid } from "./util.ts";
 
 export interface ApprovalsApi {
   open(args: {
@@ -37,19 +38,6 @@ interface ApprovalsOptions {
   tableNames: CHTableNames;
   rbac: RbacApi;
   logger?: Logger;
-}
-
-function uuid(): string {
-  const b = new Uint8Array(16);
-  crypto.getRandomValues(b);
-  b[6] = (b[6]! & 0x0f) | 0x40;
-  b[8] = (b[8]! & 0x3f) | 0x80;
-  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
-function nowMs(): string {
-  return new Date().toISOString();
 }
 
 export function createApprovalsApi(opts: ApprovalsOptions): ApprovalsApi {
@@ -152,7 +140,7 @@ export function createApprovalsApi(opts: ApprovalsOptions): ApprovalsApi {
           decision,
           delegate_user_id: delegateUserId,
           comment,
-          decided_at: nowMs(),
+          decided_at: chDateNow(),
         },
       ],
       format: "JSONEachRow",
@@ -175,9 +163,9 @@ export function createApprovalsApi(opts: ApprovalsOptions): ApprovalsApi {
           chain: req.chain,
           current_step: req.currentStep,
           status: req.status,
-          expires_at: req.expiresAt ? req.expiresAt.toISOString() : null,
-          created_at: req.createdAt.toISOString(),
-          updated_at: req.updatedAt.toISOString(),
+          expires_at: req.expiresAt ? chDate(req.expiresAt) : null,
+          created_at: chDate(req.createdAt),
+          updated_at: chDate(req.updatedAt),
           _deleted: 0,
         },
       ],
@@ -367,7 +355,7 @@ export function createApprovalsApi(opts: ApprovalsOptions): ApprovalsApi {
     },
 
     async expireDuePending(now) {
-      const cutoff = (now ?? new Date()).toISOString();
+      const cutoff = chDate(now ?? new Date());
       const rows = await rowsFromQuery(
         `SELECT * FROM ${t.approvalRequests} FINAL
          WHERE status = {pending:String} AND expires_at < {cutoff:String} AND _deleted = 0`,

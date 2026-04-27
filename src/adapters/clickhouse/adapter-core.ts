@@ -14,6 +14,7 @@ import type {
 } from "../../types.ts";
 import type { CHClient, CHTableNames, Logger } from "./types.ts";
 import { parseSql, injectFinal, gateDeleted } from "./sql-translator.ts";
+import { chDate, chDateNow } from "./util.ts";
 
 export interface AdapterCoreOptions {
   client: CHClient;
@@ -33,16 +34,12 @@ const FRAMEWORK_TABLE_KEYS: (keyof CHTableNames)[] = [
   "verificationTokens",
 ];
 
-function nowMs(): string {
-  return new Date().toISOString();
-}
-
 /** Map JS values to ClickHouse-friendly representations.
- *  - Date → ISO string (matches DateTime64(3,'UTC'))
- *  - undefined → null  */
+ *  - Date → canonical CH DateTime64 string (matches DateTime64(3,'UTC'))
+ *  - undefined → null */
 function chValue(v: unknown): unknown {
   if (v === undefined) return null;
-  if (v instanceof Date) return v.toISOString();
+  if (v instanceof Date) return chDate(v);
   return v;
 }
 
@@ -64,8 +61,8 @@ export function createAdapterCore(opts: AdapterCoreOptions): DatabaseAdapter {
             row[parsed.columns[i]!] = chValue(params[i]);
           }
           // framework-managed audit cols
-          if (!("created_at" in row)) row.created_at = nowMs();
-          if (!("updated_at" in row)) row.updated_at = nowMs();
+          if (!("created_at" in row)) row.created_at = chDateNow();
+          if (!("updated_at" in row)) row.updated_at = chDateNow();
           if (!("_deleted" in row)) row._deleted = 0;
           await client.insert({
             table: parsed.table,
@@ -80,7 +77,7 @@ export function createAdapterCore(opts: AdapterCoreOptions): DatabaseAdapter {
         }
         if (parsed.kind === "command" && parsed.source === "delete") {
           // tombstone insert: copy WHERE col→value, set _deleted=1
-          const row: Record<string, unknown> = { _deleted: 1, updated_at: nowMs() };
+          const row: Record<string, unknown> = { _deleted: 1, updated_at: chDateNow() };
           for (const w of parsed.whereCols) {
             row[w.col] = chValue(params[w.paramIdx]);
           }
@@ -122,7 +119,7 @@ export function createAdapterCore(opts: AdapterCoreOptions): DatabaseAdapter {
           for (const s of parsed.setCols) {
             merged[s.col] = chValue(params[s.paramIdx]);
           }
-          merged.updated_at = nowMs();
+          merged.updated_at = chDateNow();
           merged._deleted = 0;
           await client.insert({
             table: parsed.table,

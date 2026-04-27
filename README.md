@@ -465,6 +465,25 @@ await adapter.approvals.decide({
 });
 ```
 
+### Verified versions
+
+The adapter is integration-tested against three live ClickHouse servers. All 13 spec scenarios pass on each:
+
+| Server | Image tag | Status |
+| --- | --- | --- |
+| 24.x LTS | `clickhouse/clickhouse-server:24.8` | ✓ 13/13 |
+| 25.x LTS | `clickhouse/clickhouse-server:25.3` | ✓ 13/13 |
+| 25.10+ | `clickhouse/clickhouse-server:25.10` | ✓ 13/13 |
+
+To reproduce locally:
+
+```bash
+docker compose -f examples/clickhouse/docker-compose.yml up -d
+bun tests/integration/clickhouse/run.ts        # all three
+bun tests/integration/clickhouse/run.ts 24     # one version
+docker compose -f examples/clickhouse/docker-compose.yml down -v
+```
+
 ### OLAP-on-OLTP trade-offs (read these before adopting)
 
 - **Hot reads use `FINAL`** on `ReplacingMergeTree` to collapse to the latest version per key. This is more expensive than a typical SQL row read; budget for it.

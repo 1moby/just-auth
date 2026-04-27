@@ -10,6 +10,7 @@ import type {
   RoleScope,
 } from "./types.ts";
 import { traverseChain, collectDescendants } from "./cycle-detect.ts";
+import { chDate, chDateNow, uuid } from "./util.ts";
 
 export interface RbacApi {
   createOrganization(args: { id?: string; name: string; parentOrgId?: string | null }): Promise<{ id: string }>;
@@ -55,20 +56,6 @@ interface RbacOptions {
   logger?: Logger;
 }
 
-function uuid(): string {
-  // RFC4122 v4 via Web Crypto
-  const b = new Uint8Array(16);
-  crypto.getRandomValues(b);
-  b[6] = (b[6]! & 0x0f) | 0x40;
-  b[8] = (b[8]! & 0x3f) | 0x80;
-  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
-function nowMs(): string {
-  return new Date().toISOString();
-}
-
 export function createRbacApi(opts: RbacOptions): RbacApi {
   const { client, tableNames: t, logger } = opts;
 
@@ -107,7 +94,7 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
        WHERE user_id = {uid:String} AND _deleted = 0`,
       { uid: userId }
     );
-    const now = nowMs();
+    const now = chDateNow();
     return rows
       .filter((r) => !r.expires_at || String(r.expires_at) > now)
       .map((r) => ({
@@ -162,10 +149,10 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
             supervisor_user_id: null,
             password_hash: null,
             role: null,
-            created_at: nowMs(),
+            created_at: chDateNow(),
           };
     Object.assign(base, patch);
-    base.updated_at = nowMs();
+    base.updated_at = chDateNow();
     base._deleted = 0;
     await client.insert({
       table: t.users,
@@ -207,8 +194,8 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
             id: orgId,
             name,
             parent_org_id: parentOrgId ?? null,
-            created_at: nowMs(),
-            updated_at: nowMs(),
+            created_at: chDateNow(),
+            updated_at: chDateNow(),
             _deleted: 0,
           },
         ],
@@ -275,8 +262,8 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
             org_id: orgId,
             parent_dept_id: parentDeptId ?? null,
             name,
-            created_at: nowMs(),
-            updated_at: nowMs(),
+            created_at: chDateNow(),
+            updated_at: chDateNow(),
             _deleted: 0,
           },
         ],
@@ -332,8 +319,8 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
             id,
             scope,
             permissions: JSON.stringify(permissions),
-            created_at: nowMs(),
-            updated_at: nowMs(),
+            created_at: chDateNow(),
+            updated_at: chDateNow(),
             _deleted: 0,
           },
         ],
@@ -350,12 +337,14 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
             id,
             user_id: userId,
             role_id: roleId,
-            org_id: orgId ?? null,
-            dept_id: deptId ?? null,
+            // empty-string sentinel — these columns are non-nullable to be
+            // valid ORDER BY keys in CH (see ddl.ts comment).
+            org_id: orgId ?? "",
+            dept_id: deptId ?? "",
             granted_by: grantedBy,
-            expires_at: expiresAt ? expiresAt.toISOString() : null,
-            created_at: nowMs(),
-            updated_at: nowMs(),
+            expires_at: expiresAt ? chDate(expiresAt) : null,
+            created_at: chDateNow(),
+            updated_at: chDateNow(),
             _deleted: 0,
           },
         ],
@@ -373,11 +362,11 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
             id: uuid(),
             user_id: userId,
             role_id: roleId,
-            org_id: orgId ?? null,
-            dept_id: deptId ?? null,
+            org_id: orgId ?? "",
+            dept_id: deptId ?? "",
             granted_by: "",
             expires_at: null,
-            updated_at: nowMs(),
+            updated_at: chDateNow(),
             _deleted: 1,
           },
         ],

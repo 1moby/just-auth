@@ -1,6 +1,6 @@
 {
   "name": "@1moby/just-auth",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Lightweight zero-dependency edge-native auth library for React",
   "type": "module",
   "sideEffects": false,
@@ -106,6 +106,7 @@
     }
   },
   "devDependencies": {
+    "@clickhouse/client": "^1.13.3",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
     "react": "^19.2.4",

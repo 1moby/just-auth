@@ -9,7 +9,22 @@ export interface MigrateOptions extends DDLOptions {
 /** Run DDL idempotently against ClickHouse. Safe to re-run. */
 export async function migrate(opts: MigrateOptions): Promise<void> {
   const { client, logger } = opts;
-  const stmts = ddlStatements(opts);
+  let database = opts.database;
+  if (!database) {
+    // Autodetect — dictionaries can't inherit the session's default database
+    // for SOURCE queries, so we need an explicit DB clause.
+    try {
+      const res = await client.query({
+        query: "SELECT currentDatabase() AS db",
+        format: "JSONEachRow",
+      });
+      const rows = await res.json<{ db: string }>();
+      database = rows[0]?.db;
+    } catch {
+      // fall back to bare source — works on simple deployments
+    }
+  }
+  const stmts = ddlStatements({ ...opts, database });
   const t0 = Date.now();
   for (const stmt of stmts) {
     const stmtStart = Date.now();

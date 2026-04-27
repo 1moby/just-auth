@@ -1,13 +1,24 @@
-# Local ClickHouse for testing the adapter against a real CH instance.
-# Run: docker compose up -d
-# Then: bun examples/clickhouse/server.ts
+# Multi-version ClickHouse stack for integration testing.
+#
+# Each service exposes its own ports so all three can run in parallel
+# during a full matrix sweep.
+#
+# Usage:
+#   docker compose -f examples/clickhouse/docker-compose.yml up -d
+#   bun tests/integration/clickhouse/run.ts          # tests all 3 versions
+#   docker compose -f examples/clickhouse/docker-compose.yml down -v
+#
+# Image-tag rationale: pick the latest patch on each major LTS branch
+# that the ClickHouse team actively supports. Update these tags when LTS
+# rolls forward.
+
 services:
-  clickhouse:
-    image: clickhouse/clickhouse-server:26.1
-    container_name: just-auth-ch
+  ch24:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: just-auth-ch24
     ports:
-      - "8123:8123" # HTTP
-      - "9000:9000" # native TCP
+      - "8124:8123"
+      - "9024:9000"
     environment:
       CLICKHOUSE_DB: just_auth
       CLICKHOUSE_USER: default
@@ -21,4 +32,51 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8123/ping"]
       interval: 5s
       timeout: 3s
-      retries: 12
+      retries: 24
+      start_period: 10s
+
+  ch25:
+    image: clickhouse/clickhouse-server:25.3
+    container_name: just-auth-ch25
+    ports:
+      - "8125:8123"
+      - "9025:9000"
+    environment:
+      CLICKHOUSE_DB: just_auth
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  ch26:
+    # The latest stable on the 25.x branch represents what 26.1 will ship.
+    # When 26.x stable lands we'll bump the tag here.
+    image: clickhouse/clickhouse-server:25.10
+    container_name: just-auth-ch26
+    ports:
+      - "8126:8123"
+      - "9026:9000"
+    environment:
+      CLICKHOUSE_DB: just_auth
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
