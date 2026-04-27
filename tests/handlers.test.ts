@@ -19,6 +19,7 @@ function createMockProvider(id: string): OAuthProvider {
       return {
         id: "provider-user-123",
         email: "user@example.com",
+        emailVerified: true,
         name: "Test User",
         avatarUrl: "https://example.com/avatar.png",
       };
@@ -98,7 +99,7 @@ describe("Route Handlers", () => {
       const req = new Request("http://localhost/api/auth/login/github");
       const res = await handlers.handleRequest(req);
       const cookies = res!.headers.getSetCookie();
-      const stateCookie = cookies.find((c) => c.startsWith("oauth_state="));
+      const stateCookie = cookies.find((c) => c.startsWith("oauth_state_github="));
       expect(stateCookie).toBeTruthy();
       expect(stateCookie).toContain("HttpOnly");
       expect(stateCookie).toContain("Max-Age=600");
@@ -123,7 +124,7 @@ describe("Route Handlers", () => {
     it("should reject callback with mismatched state", async () => {
       const req = new Request(
         "http://localhost/api/auth/callback/github?code=abc&state=wrong",
-        { headers: { cookie: "oauth_state=correct" } }
+        { headers: { cookie: "oauth_state_github=correct" } }
       );
       const res = await handlers.handleRequest(req);
       expect(res!.status).toBe(400);
@@ -132,7 +133,7 @@ describe("Route Handlers", () => {
     it("should successfully handle a valid callback", async () => {
       const req = new Request(
         "http://localhost/api/auth/callback/github?code=valid-code&state=test-state",
-        { headers: { cookie: "oauth_state=test-state" } }
+        { headers: { cookie: "oauth_state_github=test-state" } }
       );
       const res = await handlers.handleRequest(req);
       expect(res!.status).toBe(200);
@@ -163,14 +164,14 @@ describe("Route Handlers", () => {
       // First login
       const req1 = new Request(
         "http://localhost/api/auth/callback/github?code=code1&state=state1",
-        { headers: { cookie: "oauth_state=state1" } }
+        { headers: { cookie: "oauth_state_github=state1" } }
       );
       await handlers.handleRequest(req1);
 
       // Second login
       const req2 = new Request(
         "http://localhost/api/auth/callback/github?code=code2&state=state2",
-        { headers: { cookie: "oauth_state=state2" } }
+        { headers: { cookie: "oauth_state_github=state2" } }
       );
       await handlers.handleRequest(req2);
 
@@ -431,7 +432,7 @@ describe("Route Handlers", () => {
       // OAuth login with same email
       const res = await linkingHandlers.handleRequest(new Request(
         "http://localhost/api/auth/callback/github?code=abc&state=s1",
-        { headers: { cookie: "oauth_state=s1" } }
+        { headers: { cookie: "oauth_state_github=s1" } }
       ));
       expect(res!.status).toBe(200); // HTML redirect
 
@@ -461,7 +462,7 @@ describe("Route Handlers", () => {
 
       const res = await noLinkHandlers.handleRequest(new Request(
         "http://localhost/api/auth/callback/github?code=abc&state=s1",
-        { headers: { cookie: "oauth_state=s1" } }
+        { headers: { cookie: "oauth_state_github=s1" } }
       ));
       expect(res!.status).toBe(403);
       const body = await res!.json();
@@ -644,11 +645,11 @@ describe("Route Handlers", () => {
         new Request("http://localhost/api/auth/login/github")
       );
       const stateCookie = loginRes!.headers.get("set-cookie")!;
-      const state = stateCookie.match(/oauth_state=([^;]+)/)?.[1];
+      const state = stateCookie.match(/oauth_state_github=([^;]+)/)?.[1];
 
       const callbackRes = await restricted.handleRequest(
         new Request(`http://localhost/api/auth/callback/github?code=test&state=${state}`, {
-          headers: { cookie: `oauth_state=${state}` },
+          headers: { cookie: `oauth_state_github=${state}` },
         })
       );
       expect(callbackRes!.status).toBe(403);
@@ -676,11 +677,11 @@ describe("Route Handlers", () => {
         new Request("http://localhost/api/auth/login/github")
       );
       const stateCookie = loginRes!.headers.get("set-cookie")!;
-      const state = stateCookie.match(/oauth_state=([^;]+)/)?.[1];
+      const state = stateCookie.match(/oauth_state_github=([^;]+)/)?.[1];
 
       const callbackRes = await restricted.handleRequest(
         new Request(`http://localhost/api/auth/callback/github?code=test&state=${state}`, {
-          headers: { cookie: `oauth_state=${state}` },
+          headers: { cookie: `oauth_state_github=${state}` },
         })
       );
       expect(callbackRes!.status).toBe(200); // HTML redirect = success

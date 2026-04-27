@@ -15,6 +15,7 @@ export interface GoogleProviderConfig {
 interface GoogleUser {
   sub: string;
   email: string;
+  email_verified?: boolean;
   name: string;
   picture: string;
 }
@@ -80,6 +81,7 @@ export function createGoogleProvider(config: GoogleProviderConfig): OAuthProvide
       return {
         id: data.sub,
         email: data.email,
+        emailVerified: data.email_verified === true,
         name: data.name,
         avatarUrl: data.picture,
       };

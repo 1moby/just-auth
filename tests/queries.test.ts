@@ -306,6 +306,26 @@ describe("Database Queries", () => {
       expect(rows[0]!.email).toBe("real@x.com");
       expect(rows[0]!.org_id).toBe("org-7");
     });
+
+    it("does not let extraColumns override password_hash (would let signIn callback plant a known hash)", async () => {
+      await q.createUser(
+        { id: "u1", email: "u@x.com", name: null, avatarUrl: null },
+        { password_hash: "attacker-controlled-hash", org_id: "org-1" }
+      );
+      const rows = db.tables.get("users")!;
+      expect("password_hash" in rows[0]!).toBe(false);
+      expect(rows[0]!.org_id).toBe("org-1");
+    });
+
+    it("does not let extraColumns override role (would grant arbitrary privileges)", async () => {
+      await q.createUser(
+        { id: "u1", email: "u@x.com", name: null, avatarUrl: null, role: "user" },
+        { role: "admin", department: "eng" }
+      );
+      const rows = db.tables.get("users")!;
+      expect(rows[0]!.role).toBe("user");
+      expect(rows[0]!.department).toBe("eng");
+    });
   });
 
   describe("Table prefix", () => {

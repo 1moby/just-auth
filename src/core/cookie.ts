@@ -10,13 +10,34 @@ export interface CookieConfig {
   path: string;
 }
 
+/** A cookie named `__Host-…` is silently rejected by browsers when Domain is
+ *  set or Path != "/". A cookie named `__Secure-…` only requires Secure.
+ *  When the consumer's config conflicts with the prefix, downgrade rather
+ *  than ship a name the browser will refuse to set. */
+function reconcilePrefix(name: string, domain: string | undefined, path: string): string {
+  if (name.startsWith("__Host-") && (domain || path !== "/")) {
+    const downgraded = "__Secure-" + name.slice("__Host-".length);
+    if (typeof console !== "undefined") {
+      console.warn(
+        `[just-auth] cookie name "${name}" requires no Domain and Path=/; ` +
+        `auto-downgrading to "${downgraded}" because Domain or Path is set.`
+      );
+    }
+    return downgraded;
+  }
+  return name;
+}
+
 export function resolveCookieConfig(options?: CookieOptions): CookieConfig {
+  const path = options?.path ?? "/";
+  const domain = options?.domain;
+  const requestedName = options?.name ?? DEFAULT_COOKIE_NAME;
   return {
-    name: options?.name ?? DEFAULT_COOKIE_NAME,
+    name: reconcilePrefix(requestedName, domain, path),
     secure: options?.secure ?? true,
     sameSite: options?.sameSite ?? "lax",
-    domain: options?.domain,
-    path: options?.path ?? "/",
+    domain,
+    path,
   };
 }
 
@@ -33,7 +54,12 @@ export function serializeSessionCookie(
     `SameSite=${capitalize(config.sameSite)}`,
   ];
   if (config.secure) parts.push("Secure");
-  if (config.domain) parts.push(`Domain=${config.domain}`);
+  // RFC: __Host- prefix forbids Domain. We've already auto-downgraded the
+  // name in resolveCookieConfig if a domain is set, so this guard is belt-
+  // and-suspenders.
+  if (config.domain && !config.name.startsWith("__Host-")) {
+    parts.push(`Domain=${config.domain}`);
+  }
   return parts.join("; ");
 }
 

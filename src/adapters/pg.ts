@@ -4,7 +4,18 @@ interface PgPool {
   query(text: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
 }
 
+/** Translate the framework's `?`-style SQL into Postgres `$1, $2, …` form.
+ *  Defensive guard: this naive replacement is wrong if a `?` appears inside a
+ *  SQL string literal (e.g. LIKE '%?%'). The framework's queries don't emit
+ *  literal `?` today, but throw early if it ever happens — corrupted parameter
+ *  numbering can silently flow data from one binding into the wrong column. */
 function toNumbered(sql: string): string {
+  if (/'[^']*\?[^']*'/.test(sql)) {
+    throw new Error(
+      `[just-auth/pg] SQL contains '?' inside a string literal: parameter ` +
+      `numbering would be corrupted. Use a parameter placeholder instead.`
+    );
+  }
   let i = 0;
   return sql.replace(/\?/g, () => `$${++i}`);
 }

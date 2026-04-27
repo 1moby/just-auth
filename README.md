@@ -563,6 +563,41 @@ bun tests/integration/clickhouse/run.ts           # all 13 scenarios x CH 24.8 /
 docker compose -f examples/clickhouse/docker-compose.yml down -v
 ```
 
+## Security
+
+What the library protects against, and what your application still has to handle.
+
+### What's enforced by the library
+
+- **Session tokens** — 256-bit random, SHA-256-hashed in storage, sliding window with 30-day TTL. Raw tokens never touch the database.
+- **OAuth state** — 256-bit random per flow, timing-safe equality, **per-provider cookie names** (`oauth_state_<id>`, `code_verifier_<id>`) so concurrent flows don't cross-contaminate. Cleared on every callback exit path (success and every error).
+- **PKCE** — S256 code verifier on Google and LINE; GitHub passes the challenge but its OAuth-App tokens endpoint may not enforce it.
+- **Cookie prefixes** — default cookie name is `__Host-auth_session`. If you set `cookie.domain` or a non-`/` `cookie.path`, the library auto-downgrades to `__Secure-…` (a `__Host-` cookie with Domain set is silently rejected by browsers).
+- **Email-based account linking** — gated on `profile.emailVerified === true` *and* `allowEmailAccountLinking: true`. Set `allowUnverifiedEmailLinking: true` to opt out (don't, unless you trust the IdP). Returns `EmailNotVerified` when the provider didn't verify the email.
+- **`signIn` callback `userOverrides`** — `id`, `email`, `name`, `avatar_url`, `password_hash`, and `role` are reserved and cannot be injected. Other column names pass through but are validated against `/^[a-zA-Z_][a-zA-Z0-9_]*$/` before being interpolated.
+- **`POST /role`** — requires the `user:set-role` permission. Cannot be used to change your own role. Cannot grant a role whose permissions aren't a subset of yours (no privilege escalation in a single call).
+- **Email enumeration on registration** — `hashPassword` runs unconditionally before checking if the email exists, so taken/available paths take comparable wall time.
+- **Email enumeration on credentials login** — `verifyPassword` always runs against either the user's hash or a dummy hash of the same shape.
+- **CSRF (defense in depth)** — `Origin` / `Referer` check on every POST, alongside `SameSite=Lax` cookies.
+- **Open redirect** — `onAuthSuccess` and `pages.error` are validated against `isSafeRedirect` (same-origin only).
+- **HTML attribute escaping** — `&`, `"`, `'`, `` ` ``, `<`, `>` are all escaped in the OAuth-redirect HTML.
+- **Email case** — normalized to lowercase + trimmed at every ingestion point (registration, OAuth callback, `allowedEmails` check) so `Alice@x.com` and `alice@x.com` collapse to one identity.
+- **ClickHouse table names** — every consumer-provided table name is validated against the SQL identifier regex at adapter construction time.
+- **`createReactAuth` provider IDs** — must match `[a-zA-Z0-9_-]+` (cookie-name safety).
+
+### What you still need to do
+
+- **Rate limit `POST /register` and `POST /callback/credentials`.** The library enforces a `passwordMinLength` (default 8 — bump to 12+ for new apps) and a 128-char max to prevent PBKDF2 DoS, but it does not rate-limit. Add Cloudflare Rate Limiting rules, an upstream WAF, or a middleware in front of the auth routes.
+- **Force-sign-out all sessions on password change.** The library exposes `queries.deleteUserSessions(userId)` if you wire it; the framework doesn't auto-revoke other sessions when a single password is changed.
+- **Audit your `signIn` callback.** Anything you put in `userOverrides` is written to the `users` row. Reserved keys (`id`, `email`, `name`, `avatar_url`, `password_hash`, `role`) are rejected, but if your callback echoes user-controlled data into `userOverrides` for any *other* column, the user controls that column.
+- **Trust your `X-Forwarded-Host` / `X-Forwarded-Proto` source.** The library uses these headers to build absolute redirect URLs in the OAuth flow. Only trust them when the auth server is firewalled behind a known reverse proxy.
+- **Provide a password-reset / magic-link flow.** The library doesn't ship one. The `verification_tokens` table is reserved for that purpose (in the CH adapter); SQL adapters don't migrate it by default.
+- **Consider GitHub PKCE limitations.** GitHub's OAuth Apps don't enforce the `code_verifier` you send. The library still sends one for forward compatibility but don't rely on it for security against authorization-code interception.
+
+### Reporting
+
+Open a GitHub security advisory (preferred) or email the maintainer if you find a vulnerability.
+
 ## License
 
 MIT

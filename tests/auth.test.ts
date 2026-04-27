@@ -159,13 +159,13 @@ describe("createReactAuth", () => {
 
       // Extract state from cookie
       const stateCookies = loginRes!.headers.getSetCookie();
-      const stateCookie = stateCookies.find((c) => c.startsWith("oauth_state="));
+      const stateCookie = stateCookies.find((c) => c.startsWith("oauth_state_github="));
       const stateValue = stateCookie!.split("=")[1]!.split(";")[0]!;
 
       // Step 2: Callback with code and state
       const callbackReq = new Request(
         `http://localhost/api/auth/callback/github?code=auth-code&state=${stateValue}`,
-        { headers: { cookie: `oauth_state=${stateValue}` } }
+        { headers: { cookie: `oauth_state_github=${stateValue}` } }
       );
       const callbackRes = await authInstance.handleRequest(callbackReq);
       expect(callbackRes!.status).toBe(200);

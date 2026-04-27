@@ -16,7 +16,7 @@ function createMockProvider(id: string): OAuthProvider {
       return { accessToken: "mock-token", refreshToken: "mock-refresh", expiresAt: 1234 };
     },
     async getUserProfile(_t: string): Promise<OAuthUserProfile> {
-      return { id: "p-123", email: "user@example.com", name: "Test", avatarUrl: "https://example.com/a.png" };
+      return { id: "p-123", email: "user@example.com", emailVerified: true, name: "Test", avatarUrl: "https://example.com/a.png" };
     },
   };
 }
@@ -55,7 +55,7 @@ describe("callbacks.signIn", () => {
 
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(200);
@@ -77,7 +77,7 @@ describe("callbacks.signIn", () => {
 
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(200);
@@ -94,7 +94,7 @@ describe("callbacks.signIn", () => {
 
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     const html = await res!.text();
@@ -108,7 +108,7 @@ describe("callbacks.signIn", () => {
 
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(200);
@@ -126,7 +126,7 @@ describe("callbacks.signIn", () => {
 
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(500);
@@ -152,7 +152,7 @@ describe("callbacks.signIn", () => {
 
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(200);
@@ -195,7 +195,7 @@ describe("callbacks.signIn", () => {
 
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(200);
@@ -222,7 +222,7 @@ describe("callbacks.signIn", () => {
 
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     const html = await res!.text();
@@ -273,7 +273,7 @@ describe("callbacks.signIn", () => {
 
     const req = new Request(
       "http://localhost/api/auth/callback/google?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_google=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(200);
@@ -375,7 +375,7 @@ describe("no callbacks = 0.1.x behavior", () => {
     const handlers = buildHandlers(db); // no callbacks
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(200);

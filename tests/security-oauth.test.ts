@@ -82,7 +82,7 @@ describe("Security: OAuth", () => {
 
         const req = new Request(
           "http://localhost/api/auth/callback/github?code=abc&state=s1",
-          { headers: { cookie: "oauth_state=s1" } }
+          { headers: { cookie: "oauth_state_github=s1" } }
         );
         const res = await handlers.handleRequest(req);
         const html = await res!.text();
@@ -98,7 +98,7 @@ describe("Security: OAuth", () => {
 
       const req = new Request(
         "http://localhost/api/auth/callback/github?code=abc&state=s1",
-        { headers: { cookie: "oauth_state=s1" } }
+        { headers: { cookie: "oauth_state_github=s1" } }
       );
       const res = await handlers.handleRequest(req);
       const html = await res!.text();
@@ -112,7 +112,7 @@ describe("Security: OAuth", () => {
 
       const req = new Request(
         "http://localhost/api/auth/callback/github?code=abc&state=s1",
-        { headers: { cookie: "oauth_state=s1" } }
+        { headers: { cookie: "oauth_state_github=s1" } }
       );
       const res = await handlers.handleRequest(req);
       const html = await res!.text();
@@ -140,7 +140,7 @@ describe("Security: OAuth", () => {
 
       const res = await handlers.handleRequest(new Request(
         "http://localhost/api/auth/callback/github?code=abc",
-        { headers: { cookie: "oauth_state=some-state" } }
+        { headers: { cookie: "oauth_state_github=some-state" } }
       ));
       expect(res!.status).toBe(400);
       const body = await res!.json() as { error: string };
@@ -161,7 +161,7 @@ describe("Security: OAuth", () => {
 
       const res = await handlers.handleRequest(new Request(
         "http://localhost/api/auth/callback/github?code=abc&state=tampered-value",
-        { headers: { cookie: "oauth_state=original-value" } }
+        { headers: { cookie: "oauth_state_github=original-value" } }
       ));
       expect(res!.status).toBe(400);
     });
@@ -171,7 +171,7 @@ describe("Security: OAuth", () => {
 
       const res = await handlers.handleRequest(new Request(
         "http://localhost/api/auth/callback/github?state=s1",
-        { headers: { cookie: "oauth_state=s1" } }
+        { headers: { cookie: "oauth_state_github=s1" } }
       ));
       expect(res!.status).toBe(400);
     });
@@ -182,7 +182,7 @@ describe("Security: OAuth", () => {
       const req = new Request("http://localhost/api/auth/login/github");
       const res = await handlers.handleRequest(req);
       const cookies = res!.headers.getSetCookie();
-      const stateCookie = cookies.find((c) => c.startsWith("oauth_state="));
+      const stateCookie = cookies.find((c) => c.startsWith("oauth_state_github="));
       expect(stateCookie).toBeTruthy();
       expect(stateCookie).toContain("HttpOnly");
     });
@@ -193,7 +193,7 @@ describe("Security: OAuth", () => {
       const req = new Request("http://localhost/api/auth/login/github");
       const res = await handlers.handleRequest(req);
       const cookies = res!.headers.getSetCookie();
-      const stateCookie = cookies.find((c) => c.startsWith("oauth_state="));
+      const stateCookie = cookies.find((c) => c.startsWith("oauth_state_github="));
       expect(stateCookie).toContain("Max-Age=600");
     });
   });
@@ -282,7 +282,7 @@ describe("Security: OAuth", () => {
         new Request("http://localhost/api/auth/login/github")
       );
       const cookies = res!.headers.getSetCookie();
-      const verifierCookie = cookies.find((c) => c.startsWith("code_verifier="));
+      const verifierCookie = cookies.find((c) => c.startsWith("code_verifier_github="));
       expect(verifierCookie).toBeTruthy();
       expect(verifierCookie).toContain("HttpOnly");
     });

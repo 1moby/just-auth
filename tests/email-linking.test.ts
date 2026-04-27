@@ -6,7 +6,7 @@ import { createMockDatabase } from "./helpers/mock-db.ts";
 import { createQueries } from "../src/db/queries.ts";
 import type { OAuthProvider, OAuthTokens, OAuthUserProfile, SignInCallbackContext } from "../src/types.ts";
 
-function createMockProvider(id: string): OAuthProvider {
+function createMockProvider(id: string, opts: { emailVerified?: boolean } = {}): OAuthProvider {
   return {
     id,
     createAuthorizationURL(state: string): URL {
@@ -16,7 +16,13 @@ function createMockProvider(id: string): OAuthProvider {
       return { accessToken: "mock-token" };
     },
     async getUserProfile(_t: string): Promise<OAuthUserProfile> {
-      return { id: "provider-user-1", email: "alice@example.com", name: "Alice", avatarUrl: null };
+      return {
+        id: "provider-user-1",
+        email: "alice@example.com",
+        emailVerified: opts.emailVerified ?? true,
+        name: "Alice",
+        avatarUrl: null,
+      };
     },
   };
 }
@@ -61,7 +67,7 @@ describe("email-based account linking", () => {
     const handlers = buildHandlers(db);
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(403);
@@ -76,7 +82,7 @@ describe("email-based account linking", () => {
     const handlers = buildHandlers(db, { allowEmailAccountLinking: true });
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(200);
@@ -98,7 +104,7 @@ describe("email-based account linking", () => {
     const handlers = buildHandlers(db, { allowDangerousEmailAccountLinking: true });
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     const res = await handlers.handleRequest(req);
     expect(res!.status).toBe(200);
@@ -114,7 +120,7 @@ describe("email-based account linking", () => {
     });
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     await handlers.handleRequest(req);
 
@@ -133,7 +139,7 @@ describe("email-based account linking", () => {
     });
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     await handlers.handleRequest(req);
 
@@ -151,12 +157,74 @@ describe("email-based account linking", () => {
     });
     const req = new Request(
       "http://localhost/api/auth/callback/github?code=c&state=s",
-      { headers: { cookie: "oauth_state=s" } }
+      { headers: { cookie: "oauth_state_github=s" } }
     );
     await handlers.handleRequest(req);
 
     expect(captured).not.toBeNull();
     expect(captured!.existingUserId).toBeNull();
     expect(captured!.emailLinked).toBe(false);
+  });
+});
+
+describe("email-linking blocks unverified provider emails (account-takeover guard)", () => {
+  let db: ReturnType<typeof createMockDatabase>;
+  beforeEach(() => {
+    db = createMockDatabase();
+    db.tables.set("users", [
+      { id: "u-existing", email: "alice@example.com", name: "Alice (original)", avatar_url: null },
+    ]);
+    db.tables.set("accounts", []);
+    db.tables.set("sessions", []);
+  });
+
+  function buildHandlersWithUnverified(opts: {
+    allowEmailAccountLinking?: boolean;
+    allowUnverifiedEmailLinking?: boolean;
+  }) {
+    const cookieConfig = resolveCookieConfig({ secure: false });
+    const queries = createQueries(db);
+    const sessionManager = createSessionManager(queries);
+    return createHandlers({
+      providers: new Map([["github", createMockProvider("github", { emailVerified: false })]]),
+      sessionManager,
+      cookieConfig,
+      queries,
+      basePath: "/api/auth",
+      sessionMaxAge: 30 * 86400,
+      oauthAutoCreateAccount: true,
+      allowEmailAccountLinking: opts.allowEmailAccountLinking,
+      allowUnverifiedEmailLinking: opts.allowUnverifiedEmailLinking,
+    });
+  }
+
+  it("rejects with EmailNotVerified when allowEmailAccountLinking is on but provider didn't verify email", async () => {
+    const handlers = buildHandlersWithUnverified({ allowEmailAccountLinking: true });
+    const req = new Request(
+      "http://localhost/api/auth/callback/github?code=c&state=s",
+      { headers: { cookie: "oauth_state_github=s" } }
+    );
+    const res = await handlers.handleRequest(req);
+    expect(res!.status).toBe(403);
+    const body = await res!.json();
+    expect(body.error).toBe("EmailNotVerified");
+    // No account row, no session
+    expect(db.tables.get("accounts")).toHaveLength(0);
+    expect(db.tables.get("sessions")).toHaveLength(0);
+  });
+
+  it("links the account when allowUnverifiedEmailLinking is explicitly set (escape hatch)", async () => {
+    const handlers = buildHandlersWithUnverified({
+      allowEmailAccountLinking: true,
+      allowUnverifiedEmailLinking: true,
+    });
+    const req = new Request(
+      "http://localhost/api/auth/callback/github?code=c&state=s",
+      { headers: { cookie: "oauth_state_github=s" } }
+    );
+    const res = await handlers.handleRequest(req);
+    expect(res!.status).toBe(200);
+    expect(db.tables.get("accounts")!).toHaveLength(1);
+    expect(db.tables.get("sessions")!).toHaveLength(1);
   });
 });

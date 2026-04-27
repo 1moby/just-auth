@@ -402,8 +402,11 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
       const grants = await listGrantsForUser(userId);
       const rolesUsed: string[] = [];
 
-      // Step 1: superadmin (system role with '*')
+      // Step 1: superadmin — only when the grant is genuinely system-scoped
+      // (no orgId/deptId attached). Otherwise an org-scoped grant of a
+      // wildcard role would silently elevate to system superadmin.
       for (const g of grants) {
+        if (g.orgId !== null || g.deptId !== null) continue;
         const def = await getRoleDef(g.roleId);
         if (def?.scope === "system" && def.permissions.includes("*")) {
           logger?.info("auth.ch.rbac.permission.allow", {
@@ -416,10 +419,17 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
         }
       }
 
-      // Step 2: explicit deny anywhere
+      // Step 2: explicit deny — scoped. A deny attached to an org/dept grant
+      // only blocks the matching org/dept; a deny attached to a system-scope
+      // grant blocks globally. This prevents cross-org deny bleed.
       for (const g of grants) {
         const m = await permissionMatches(g.roleId, permission);
-        if (m.deny) {
+        if (!m.deny) continue;
+        const denyApplies =
+          (g.orgId === null && g.deptId === null) || // system-scope deny: global
+          (g.orgId !== null && g.orgId === resource?.orgId) ||
+          (g.deptId !== null && g.deptId === resource?.deptId);
+        if (denyApplies) {
           logger?.info("auth.ch.rbac.permission.deny", {
             userId,
             permission,
@@ -501,8 +511,22 @@ export function createRbacApi(opts: RbacOptions): RbacApi {
         }
       }
 
-      // Step 6: supervisor-chain delegation
-      const chain = await this.getSupervisorChain(userId, { maxDepth: 10 });
+      // Step 6: supervisor-chain delegation. If the chain cycles, treat as
+      // deny rather than throwing — a malicious user who set their own
+      // supervisor to themselves shouldn't DoS the permission check.
+      let chain: string[];
+      try {
+        chain = await this.getSupervisorChain(userId, { maxDepth: 10 });
+      } catch (e) {
+        logger?.warn("auth.ch.rbac.permission.deny", {
+          userId,
+          permission,
+          reason: "supervisor chain cycle",
+          message: e instanceof Error ? e.message : String(e),
+          elapsedMs: Date.now() - t0,
+        });
+        return { allowed: false, reason: "supervisor chain cycle" };
+      }
       for (const supervisorId of chain) {
         const supGrants = await listGrantsForUser(supervisorId);
         for (const g of supGrants) {

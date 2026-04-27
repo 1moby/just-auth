@@ -45,15 +45,68 @@ async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   return result === 0;
 }
 
-/** Escape a string for safe embedding in an HTML attribute value */
+/** Escape a string for safe embedding in an HTML attribute value.
+ *  Includes the backtick — some legacy parsers treat it as an attribute delimiter. */
 function escapeHtmlAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/`/g, "&#96;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function generateId(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Per-provider cookie names. Namespacing prevents one provider's flow from
+ *  reading another's state/verifier when a user has parallel login tabs open. */
+const PROVIDER_ID_RE = /^[a-zA-Z0-9_-]+$/;
+function stateCookieName(providerId: string): string {
+  if (!PROVIDER_ID_RE.test(providerId)) {
+    throw new Error(`[just-auth] invalid provider id: ${providerId}`);
+  }
+  return `oauth_state_${providerId}`;
+}
+function verifierCookieName(providerId: string): string {
+  if (!PROVIDER_ID_RE.test(providerId)) {
+    throw new Error(`[just-auth] invalid provider id: ${providerId}`);
+  }
+  return `code_verifier_${providerId}`;
+}
+
+/** Build the two Set-Cookie headers that expire this provider's state and
+ *  verifier cookies. Used on every handleCallback exit path (success + error). */
+function clearedStateCookies(providerId: string, cookieConfig: CookieConfig): string[] {
+  return [
+    serializeStateCookie(stateCookieName(providerId), "", cookieConfig).replace(
+      "Max-Age=600",
+      "Max-Age=0"
+    ),
+    serializeStateCookie(verifierCookieName(providerId), "", cookieConfig).replace(
+      "Max-Age=600",
+      "Max-Age=0"
+    ),
+  ];
+}
+
+/** Build a JSON error response that ALSO clears the provider's state cookies.
+ *  Use this on every handleCallback error path so leaked state can't be replayed. */
+function jsonErrorWithStateClear(
+  body: unknown,
+  status: number,
+  providerId: string,
+  cookieConfig: CookieConfig
+): Response {
+  return responseWithCookies(JSON.stringify(body), {
+    status,
+    cookies: clearedStateCookies(providerId, cookieConfig),
+    extraHeaders: { "Content-Type": "application/json" },
+  });
 }
 
 /**
@@ -143,6 +196,7 @@ export interface HandlersConfig {
   allowRegistration?: boolean;
   oauthAutoCreateAccount?: boolean;
   allowEmailAccountLinking?: boolean;
+  allowUnverifiedEmailLinking?: boolean;
   /** @deprecated Use `allowEmailAccountLinking`. */
   allowDangerousEmailAccountLinking?: boolean;
   rbac?: RbacConfig;
@@ -153,13 +207,33 @@ export interface HandlersConfig {
   pages?: PagesConfig;
 }
 
-function isEmailAllowed(email: string | null, rule?: string[] | ((email: string) => boolean)): boolean {
+/** Lowercase + trim for safe comparison. RFC 5321 declares the local-part
+ *  case-sensitivity provider-defined, but in practice every modern provider
+ *  treats it as case-insensitive. We normalize to avoid duplicate-account
+ *  bypass and allowlist case-mismatch. */
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function isEmailAllowed(
+  email: string | null,
+  rule?: string[] | ((email: string) => boolean)
+): boolean {
   if (!rule) return true;
   if (!email) return false;
-  if (typeof rule === "function") return rule(email);
-  return rule.some((pattern) =>
-    pattern.startsWith("@") ? email.endsWith(pattern) : email === pattern
-  );
+  const normalized = normalizeEmail(email);
+  if (typeof rule === "function") {
+    try {
+      return rule(normalized);
+    } catch {
+      // Throwing inside an allowedEmails function fails closed (deny).
+      return false;
+    }
+  }
+  return rule.some((pattern) => {
+    const p = pattern.toLowerCase();
+    return p.startsWith("@") ? normalized.endsWith(p) : normalized === p;
+  });
 }
 
 /**
@@ -273,13 +347,13 @@ export function createHandlers(config: HandlersConfig) {
     const url = await provider.createAuthorizationURL(state);
 
     const cookies = [
-      serializeStateCookie("oauth_state", state, cookieConfig),
+      serializeStateCookie(stateCookieName(providerId), state, cookieConfig),
     ];
 
-    // For Google PKCE, store the code verifier
+    // For Google PKCE, store the code verifier (per-provider name).
     if ("codeVerifier" in provider && typeof provider.codeVerifier === "string") {
       cookies.push(
-        serializeStateCookie("code_verifier", provider.codeVerifier, cookieConfig)
+        serializeStateCookie(verifierCookieName(providerId), provider.codeVerifier, cookieConfig)
       );
     }
 
@@ -302,18 +376,20 @@ export function createHandlers(config: HandlersConfig) {
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
     const cookieHeader = request.headers.get("cookie");
-    const storedState = parseCookieValue(cookieHeader, "oauth_state");
+    const storedState = parseCookieValue(cookieHeader, stateCookieName(providerId));
 
     if (!code || !state || !storedState || !(await timingSafeEqual(state, storedState))) {
-      return new Response(JSON.stringify({ error: "Invalid OAuth state" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      return jsonErrorWithStateClear(
+        { error: "Invalid OAuth state" },
+        400,
+        providerId,
+        cookieConfig
+      );
     }
 
-    // Restore code verifier for PKCE providers
+    // Restore code verifier for PKCE providers (per-provider name).
     if ("codeVerifier" in provider) {
-      const storedVerifier = parseCookieValue(cookieHeader, "code_verifier");
+      const storedVerifier = parseCookieValue(cookieHeader, verifierCookieName(providerId));
       if (storedVerifier) {
         (provider as { codeVerifier: string }).codeVerifier = storedVerifier;
       }
@@ -321,13 +397,21 @@ export function createHandlers(config: HandlersConfig) {
 
     try {
       const tokens = await provider.validateAuthorizationCode(code);
-      const profile = await provider.getUserProfile(tokens.accessToken);
+      const rawProfile = await provider.getUserProfile(tokens.accessToken);
+      // Normalize the OAuth-provided email to lowercase for consistent lookups
+      // and case-insensitive uniqueness against the local users.email column.
+      const profile = {
+        ...rawProfile,
+        email: rawProfile.email ? normalizeEmail(rawProfile.email) : null,
+      };
 
       // Email restriction check — reject before any account/session creation
       if (!isEmailAllowed(profile.email, config.allowedEmails)) {
-        return new Response(
-          JSON.stringify({ error: "EmailNotAllowed", message: "This email domain is not permitted" }),
-          { status: 403, headers: { "Content-Type": "application/json" } }
+        return jsonErrorWithStateClear(
+          { error: "EmailNotAllowed", message: "This email domain is not permitted" },
+          403,
+          providerId,
+          cookieConfig
         );
       }
 
@@ -339,19 +423,36 @@ export function createHandlers(config: HandlersConfig) {
         existingUserByEmail = await queries.getUserByEmail(profile.email);
       }
 
-      const emailLinkingAllowed = Boolean(
+      const linkingFlagSet = Boolean(
         config.allowEmailAccountLinking ?? config.allowDangerousEmailAccountLinking
       );
+      // Linking is gated on the IdP marking the email verified, unless the
+      // consumer has explicitly opted out via `allowUnverifiedEmailLinking`.
+      // This blocks the account-takeover vector where a provider that doesn't
+      // verify email (e.g. a misconfigured GitHub OAuth app, or a provider
+      // that returns an unverified email) is used to link to an existing
+      // user's account.
+      const emailLinkingAllowed =
+        linkingFlagSet &&
+        (profile.emailVerified === true ||
+          config.allowUnverifiedEmailLinking === true);
 
       const willLinkByEmail = !user && !!existingUserByEmail && emailLinkingAllowed;
       const existingUserId: string | null =
         user?.id ?? (willLinkByEmail ? existingUserByEmail!.id : null);
 
       // Reject email-collision before invoking signIn (preserves pre-0.3 behavior).
+      // Two reject sub-cases: (a) flag is off, (b) flag on but email not verified.
       if (!user && existingUserByEmail && !emailLinkingAllowed) {
-        return new Response(
-          JSON.stringify({ error: "OAuthAccountNotLinked", message: "Email already associated with another account" }),
-          { status: 403, headers: { "Content-Type": "application/json" } }
+        const reason = linkingFlagSet ? "EmailNotVerified" : "OAuthAccountNotLinked";
+        const message = linkingFlagSet
+          ? "Identity provider has not verified this email; cannot link to existing account"
+          : "Email already associated with another account";
+        return jsonErrorWithStateClear(
+          { error: reason, message },
+          403,
+          providerId,
+          cookieConfig
         );
       }
 
@@ -384,10 +485,11 @@ export function createHandlers(config: HandlersConfig) {
           const errorPage = isSafeRedirect(rawError, request) ? rawError : "/";
           const reason = encodeURIComponent(result.reason ?? "SIGNIN_REJECTED");
           const sep = errorPage.includes("?") ? "&" : "?";
-          return htmlRedirectWithCookies(`${errorPage}${sep}error=${reason}`, request, [
-            serializeStateCookie("oauth_state", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
-            serializeStateCookie("code_verifier", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
-          ]);
+          return htmlRedirectWithCookies(
+            `${errorPage}${sep}error=${reason}`,
+            request,
+            clearedStateCookies(providerId, cookieConfig)
+          );
         }
         if (result.userOverrides) userOverrides = result.userOverrides;
       }
@@ -409,9 +511,11 @@ export function createHandlers(config: HandlersConfig) {
       // Create new user if still none matched.
       if (!user) {
         if (!config.oauthAutoCreateAccount) {
-          return new Response(
-            JSON.stringify({ error: "AccountNotFound", message: "No account found. Contact an administrator to create one." }),
-            { status: 403, headers: { "Content-Type": "application/json" } }
+          return jsonErrorWithStateClear(
+            { error: "AccountNotFound", message: "No account found. Contact an administrator to create one." },
+            403,
+            providerId,
+            cookieConfig
           );
         }
         const userId = generateId();
@@ -441,18 +545,27 @@ export function createHandlers(config: HandlersConfig) {
       const redirect = isSafeRedirect(rawRedirect, request) ? rawRedirect : "/";
       return htmlRedirectWithCookies(redirect, request, [
         serializeSessionCookie(cookieConfig, token, sessionMaxAge),
-        // Clear state cookies
-        serializeStateCookie("oauth_state", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
-        serializeStateCookie("code_verifier", "", { ...cookieConfig }).replace("Max-Age=600", "Max-Age=0"),
+        ...clearedStateCookies(providerId, cookieConfig),
       ]);
     } catch (error) {
       console.error("[just-auth] OAuth callback error:", error);
-      return new Response(JSON.stringify({ error: "Authentication failed" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      return jsonErrorWithStateClear(
+        { error: "Authentication failed" },
+        500,
+        providerId,
+        cookieConfig
+      );
     }
   }
+
+  // Session responses must never be cached by browser/CDN/proxy and must
+  // not be MIME-sniffed. These headers apply to every /session response shape.
+  const SESSION_HEADERS: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store, no-cache, must-revalidate, private",
+    Pragma: "no-cache",
+    "X-Content-Type-Options": "nosniff",
+  };
 
   async function handleSession(request: Request): Promise<Response> {
     const cookieHeader = request.headers.get("cookie");
@@ -461,7 +574,7 @@ export function createHandlers(config: HandlersConfig) {
     if (!token) {
       return new Response(JSON.stringify(null), {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: SESSION_HEADERS,
       });
     }
 
@@ -471,7 +584,7 @@ export function createHandlers(config: HandlersConfig) {
       return responseWithCookies(JSON.stringify(null), {
         status: 200,
         cookies: [clearSessionCookie(cookieConfig)],
-        extraHeaders: { "Content-Type": "application/json" },
+        extraHeaders: SESSION_HEADERS,
       });
     }
 
@@ -493,7 +606,7 @@ export function createHandlers(config: HandlersConfig) {
       const body = await config.callbacks.session(ctx);
       return new Response(JSON.stringify(body), {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: SESSION_HEADERS,
       });
     }
 
@@ -512,7 +625,7 @@ export function createHandlers(config: HandlersConfig) {
 
     return new Response(JSON.stringify(responseData), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: SESSION_HEADERS,
     });
   }
 
@@ -537,14 +650,17 @@ export function createHandlers(config: HandlersConfig) {
   async function handleRegister(request: Request): Promise<Response> {
     try {
       const body = await request.json() as { email?: string; password?: string; name?: string };
-      const { email, password, name } = body;
+      const { email: rawEmail, password, name } = body;
 
-      if (!email || !password) {
+      if (!rawEmail || typeof rawEmail !== "string" || typeof password !== "string" || !password) {
         return new Response(
           JSON.stringify({ error: "Email and password are required" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
+
+      // Normalize early so all downstream lookups + storage are case-folded.
+      const email = normalizeEmail(rawEmail);
 
       if (!EMAIL_RE.test(email)) {
         return new Response(
@@ -575,16 +691,21 @@ export function createHandlers(config: HandlersConfig) {
         );
       }
 
+      // Compute the password hash UNCONDITIONALLY before checking if the user
+      // exists. Otherwise the response time leaks "email taken" vs "available"
+      // (existing-user path skips the ~150ms PBKDF2 work, the new-user path
+      // doesn't). With the unconditional hash, both paths take comparable time.
+      const passwordHash = await hashPassword(password);
+
       const existingUser = await queries.getUserByEmail(email);
       if (existingUser) {
-        // Generic error to prevent email enumeration
+        // Generic error to prevent email enumeration.
         return new Response(
           JSON.stringify({ error: "Registration failed" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
 
-      const passwordHash = await hashPassword(password);
       const userId = generateId();
       const defaultRole = config.rbac?.defaultRole;
       const user = { id: userId, email, name: name ?? null, avatarUrl: null, role: defaultRole ?? undefined };
@@ -622,14 +743,15 @@ export function createHandlers(config: HandlersConfig) {
   async function handleCredentialsLogin(request: Request): Promise<Response> {
     try {
       const body = await request.json() as { email?: string; password?: string };
-      const { email, password } = body;
+      const { email: rawEmail, password } = body;
 
-      if (!email || !password) {
+      if (!rawEmail || typeof rawEmail !== "string" || typeof password !== "string" || !password) {
         return new Response(
           JSON.stringify({ error: "Email and password are required" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
+      const email = normalizeEmail(rawEmail);
 
       const user = await queries.getUserByEmailWithPassword(email);
 
@@ -703,15 +825,42 @@ export function createHandlers(config: HandlersConfig) {
         );
       }
 
+      // Block self-targeted role changes — a holder of `user:set-role` should
+      // not be able to grant themselves additional roles. Out-of-band ops
+      // (DB-level role assignment) must be used to bootstrap superadmins.
+      if (body.userId === session.user.id) {
+        return new Response(
+          JSON.stringify({ error: "Cannot change your own role" }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // Helper: a caller can only grant a role whose permission set is a
+      // (non-strict) subset of their own. This blocks tenant-admin → superadmin
+      // privilege escalation in a single request.
+      const callerPermSet = new Set(callerPerms);
+      function canGrant(roleId: string): boolean {
+        const targetPerms = resolvePermissions(roleId, config.rbac!);
+        return targetPerms.every((p) => callerPermSet.has(p));
+      }
+
       let finalRole: string;
 
       if (body.addRole || body.removeRole) {
         // Incremental: add or remove a single role
         const targetRole = body.addRole ?? body.removeRole!;
-        if (body.addRole && !config.rbac!.roles[targetRole]) {
+        // Validate BOTH addRole and removeRole exist in config — silently
+        // no-op'ing on removeRole hid configuration mistakes.
+        if (!config.rbac!.roles[targetRole]) {
           return new Response(
             JSON.stringify({ error: `Invalid role: ${targetRole}` }),
             { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (body.addRole && !canGrant(body.addRole)) {
+          return new Response(
+            JSON.stringify({ error: `Cannot grant role with permissions you don't hold: ${body.addRole}` }),
+            { status: 403, headers: { "Content-Type": "application/json" } }
           );
         }
         // Get current roles from user
@@ -741,12 +890,19 @@ export function createHandlers(config: HandlersConfig) {
             { status: 400, headers: { "Content-Type": "application/json" } }
           );
         }
-        // Validate all roles
+        // Validate every role exists AND that the caller's perms include all
+        // of its permissions.
         for (const r of rolesToSet) {
           if (!config.rbac!.roles[r]) {
             return new Response(
               JSON.stringify({ error: `Invalid role: ${r}` }),
               { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+          }
+          if (!canGrant(r)) {
+            return new Response(
+              JSON.stringify({ error: `Cannot grant role with permissions you don't hold: ${r}` }),
+              { status: 403, headers: { "Content-Type": "application/json" } }
             );
           }
         }

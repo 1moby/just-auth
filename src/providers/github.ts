@@ -76,9 +76,39 @@ export function createGitHubProvider(config: GitHubProviderConfig): OAuthProvide
         throw new Error(`GitHub API error: ${response.status}`);
       }
       const data = (await response.json()) as GitHubUser;
+
+      // GitHub's /user endpoint returns the user's PUBLIC email, which can be
+      // unverified. To know if the email is verified we need /user/emails which
+      // requires the `user:email` scope (already in our default scopes).
+      let emailVerified = false;
+      let email: string | null = data.email;
+      try {
+        const emailsRes = await fetch("https://api.github.com/user/emails", {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "User-Agent": "react-auth",
+          },
+        });
+        if (emailsRes.ok) {
+          const emails = (await emailsRes.json()) as Array<{
+            email: string;
+            primary: boolean;
+            verified: boolean;
+          }>;
+          const primary = emails.find((e) => e.primary) ?? emails[0];
+          if (primary) {
+            email = primary.email;
+            emailVerified = primary.verified === true;
+          }
+        }
+      } catch {
+        // Fall back to /user-only data; emailVerified stays false.
+      }
+
       return {
         id: String(data.id),
-        email: data.email,
+        email,
+        emailVerified,
         name: data.name ?? data.login,
         avatarUrl: data.avatar_url,
       };

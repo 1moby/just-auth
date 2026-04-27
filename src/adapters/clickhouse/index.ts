@@ -39,6 +39,11 @@ export interface ClickhouseAdapter extends DatabaseAdapter {
   migrate(): Promise<void>;
 }
 
+/** Strict SQL identifier — used to validate every table name we'll splice
+ *  into ClickHouse query strings. Must reject any character that could escape
+ *  out of a bare identifier and into a SQL injection. */
+const CH_IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 export function createClickhouseAdapter(
   opts: ClickhouseAdapterOptions
 ): ClickhouseAdapter {
@@ -46,6 +51,16 @@ export function createClickhouseAdapter(
     ...DEFAULT_TABLE_NAMES,
     ...opts.tableNames,
   };
+  // Validate every resolved table name once, at factory time. Otherwise an
+  // attacker-controlled tableNames override could reach the rbac/approvals
+  // query strings (which interpolate `${t.xxx}` directly) and inject SQL.
+  for (const [k, v] of Object.entries(tableNames)) {
+    if (typeof v !== "string" || !CH_IDENT_RE.test(v)) {
+      throw new Error(
+        `[just-auth/ch] invalid table name for "${k}": ${JSON.stringify(v)}`
+      );
+    }
+  }
   const logger = opts.logger ?? NOOP_LOGGER;
   const useDict = opts.useSessionDict !== false;
 

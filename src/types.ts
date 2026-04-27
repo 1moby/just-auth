@@ -45,6 +45,10 @@ export interface OAuthUserProfile {
   email: string | null;
   name: string | null;
   avatarUrl: string | null;
+  /** True when the identity provider has verified the email address.
+   *  Required for email-based account linking when `allowEmailAccountLinking` is on,
+   *  unless `allowUnverifiedEmailLinking` is explicitly set. */
+  emailVerified?: boolean;
 }
 
 export interface DatabaseAdapter {
@@ -103,9 +107,14 @@ export interface AuthConfig {
   /**
    * When true, if no account exists for (provider_id, provider_user_id) but the OAuth profile's
    * email matches an existing user, auto-link by creating the accounts row against that user.
-   * Default: false. Only safe when the identity provider verifies email (e.g. Google Workspace).
+   * Default: false. Since 0.4.3, the library enforces that the OAuth provider has marked the
+   * email verified (`profile.emailVerified === true`) — pass `allowUnverifiedEmailLinking: true`
+   * to opt out of this gate (NOT recommended for providers that don't verify email).
    */
   allowEmailAccountLinking?: boolean;
+  /** When true, allow email-based account linking even if the provider didn't verify the email.
+   *  Use only with providers you trust to verify emails (e.g. an internal IdP). Default: false. */
+  allowUnverifiedEmailLinking?: boolean;
   /** @deprecated Renamed to `allowEmailAccountLinking`. Kept for 0.2.x compatibility; either flag enables linking. */
   allowDangerousEmailAccountLinking?: boolean;
   rbac?: RbacConfig;

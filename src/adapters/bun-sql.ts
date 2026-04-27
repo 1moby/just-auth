@@ -8,7 +8,15 @@ interface BunSQL {
   unsafe(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
 }
 
+/** See `pg.ts:toNumbered` — same defensive guard against `?` inside string
+ *  literals corrupting parameter numbering. */
 function toNumbered(sql: string): string {
+  if (/'[^']*\?[^']*'/.test(sql)) {
+    throw new Error(
+      `[just-auth/bun-sql] SQL contains '?' inside a string literal: ` +
+      `parameter numbering would be corrupted.`
+    );
+  }
   let i = 0;
   return sql.replace(/\?/g, () => `$${++i}`);
 }

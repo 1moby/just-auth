@@ -134,7 +134,21 @@ export function createQueries(db: DatabaseAdapter, prefix?: string): Queries {
         avatar_url: user.avatarUrl,
       };
       if (user.role !== undefined) base.role = user.role;
-      const RESERVED = new Set(["id", "email", "name", "avatar_url"]);
+      // Reserved columns can never be overridden via extraColumns:
+      //   - id / email / name / avatar_url: identity, set by the framework
+      //   - password_hash: would let a malicious signIn callback plant a known
+      //     hash, then log in via credentials with the matching plaintext
+      //   - role: would let a signIn callback grant arbitrary privileges to a
+      //     newly created user, bypassing config.rbac.defaultRole + the
+      //     POST /role permission gate
+      const RESERVED = new Set([
+        "id",
+        "email",
+        "name",
+        "avatar_url",
+        "password_hash",
+        "role",
+      ]);
       const safeExtra: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(extraColumns ?? {})) {
         if (!RESERVED.has(k)) safeExtra[k] = v;
