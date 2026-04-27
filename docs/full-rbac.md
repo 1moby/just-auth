@@ -1,5 +1,7 @@
 # Full RBAC Design — @1moby/just-auth
 
+> **Status update (0.4.0+):** The "Future Plan" sections of this doc — multi-role per user, role inheritance, and deny rules — have shipped. They live in `src/core/rbac.ts` and remain config-driven (no extra tables). For the more advanced graph-based design (org tree, department tree, supervisor-chain delegation, persistent role grants, audit trail), see `src/adapters/clickhouse/rbac.ts` and the README "ClickHouse adapter" section. The two systems are independent.
+
 ## Current State
 
 **Single role per user** stored as `role VARCHAR(50) DEFAULT 'user'`. Permissions resolved at runtime from code config via `resolvePermissions(role, rbacConfig)`. No database tables for roles/permissions — everything is config-driven.

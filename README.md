@@ -2,19 +2,21 @@
 
 Lightweight, zero-dependency, edge-native auth library for React.
 
-OAuth 2.0 + PKCE, email/password, session management, RBAC, route-level middleware — all built on Web Crypto API and raw SQL. Works with Cloudflare Workers, Bun, Deno, Next.js, and any runtime that supports standard `Request`/`Response`.
+OAuth 2.0 + PKCE, email/password, session management, RBAC, route-level middleware, and (with the ClickHouse adapter) a multi-org permission graph + approval-flow primitives — all built on Web Crypto API and raw SQL. Works with Cloudflare Workers, Bun, Deno, Next.js, and any runtime that supports standard `Request`/`Response`.
 
 ## Features
 
-- **Zero dependencies** — only React as a peer dep
+- **Zero runtime dependencies** — only React as a peer dep (`@clickhouse/client` is an optional peer for the CH adapter)
 - **OAuth 2.0 + PKCE** — built-in providers for Google, GitHub, LINE
 - **Email/password auth** — PBKDF2-SHA256 (600k iterations), timing-safe comparison
-- **Account linking** — multiple providers share one user account via email matching
+- **Account linking** — multiple providers share one user account via email matching (`allowEmailAccountLinking`)
+- **Lifecycle callbacks** — `signIn` to gate OAuth sign-in + inject extra user columns; `session` to customize the `/api/auth/session` response body
 - **Session management** — sliding window (30-day sessions, auto-extend at 15 days), SHA-256 hashed tokens
-- **RBAC** — optional role-based access control with code-defined permissions
+- **RBAC** — optional role-based access control with code-defined permissions; multi-role per user, role inheritance, deny rules
 - **Email/domain restriction** — `allowedEmails` config to restrict by domain or custom function
 - **Route permission middleware** — `createAuthMiddleware` for path-based permission gating
-- **Database adapters** — D1, bun:sqlite, pg, mysql2, Bun.sql — bring your own driver
+- **Database adapters** — D1, bun:sqlite, pg, mysql2, Bun.sql, ClickHouse — bring your own driver
+- **ClickHouse extras (experimental)** — multi-org / department / supervisor permission graph (`adapter.rbac`) + approval-flow state machine (`adapter.approvals`); integration-tested against CH 24.8 / 25.3 / 25.10
 - **Table prefix** — `tablePrefix: "myapp_"` for shared databases
 - **Non-destructive migrations** — validates existing schema, never ALTER or DROP
 - **Security hardened** — open redirect protection, password length limits, POST-only logout
@@ -200,6 +202,15 @@ createReactAuth({
       admin: "*",  // wildcard = all permissions
     },
     defaultRole: "user",
+  },
+
+  // Custom error redirect target (used by signIn callback rejections)
+  pages: { error: "/auth/error" },
+
+  // Lifecycle callbacks (see "Hooks" section)
+  callbacks: {
+    signIn: async (ctx) => ({ allow: true }),
+    session: async ({ user, session }) => ({ user, session }),
   },
 });
 ```
@@ -527,13 +538,29 @@ import type {
   DatabaseAdapter, OAuthProvider, SessionManager,
   RbacConfig, RoleDefinition, SessionContextValue, SessionStatus,
   Queries, TableNames, MigrateOptions,
+  // 0.2.x callbacks
+  AuthCallbacks, SignInCallbackContext, SignInCallbackResult,
+  SessionCallbackContext, PagesConfig,
 } from "@1moby/just-auth";
+
+// ClickHouse adapter types (when using @1moby/just-auth/adapters/clickhouse)
+import type {
+  Organization, Department, EffectiveRole, PermissionDecision,
+  PermissionVia, RoleScope, RoleDefinition as CHRoleDefinition,
+  RoleGrant, ApprovalRequest, ApprovalStatus, ApprovalDecision,
+  RbacApi, ApprovalsApi, CHClient, CHTableNames,
+} from "@1moby/just-auth/adapters/clickhouse";
 ```
 
 ## Testing
 
 ```bash
-bun test  # 285 tests across 17 files
+bun test                                          # unit suite (331 tests across 20 files)
+
+# ClickHouse integration matrix (requires Docker)
+docker compose -f examples/clickhouse/docker-compose.yml up -d
+bun tests/integration/clickhouse/run.ts           # all 13 scenarios x CH 24.8 / 25.3 / 25.10
+docker compose -f examples/clickhouse/docker-compose.yml down -v
 ```
 
 ## License

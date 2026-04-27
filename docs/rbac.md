@@ -2,6 +2,8 @@
 
 react-auth มีระบบ RBAC แบบ optional — กำหนด role และ permissions ใน code config โดยไม่ต้องสร้างตารางเพิ่ม
 
+> **Since 0.4.0**, the ClickHouse adapter additionally exposes a graph-based RBAC API (`adapter.rbac`) with multi-org / department / supervisor-chain semantics and a richer `resolvePermission(...)` engine. The two systems are independent — config-driven RBAC documented here keeps working on every adapter; graph RBAC is opt-in via `@1moby/just-auth/adapters/clickhouse`. See README "ClickHouse adapter" section.
+
 ## วิธีเปิดใช้งาน
 
 เพิ่ม `rbac` ใน `createReactAuth()` config:

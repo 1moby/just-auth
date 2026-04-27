@@ -51,6 +51,21 @@
 | `pg.ts` | pg (node-postgres) | Auto-translates `?` → `$1, $2, ...` |
 | `mysql.ts` | mysql2 | Uses `pool.execute()` with `?` placeholders |
 | `bun-sql.ts` | Bun.sql | Uses `sql.unsafe()`. Options: `{dialect: "mysql"}` keeps `?`, default (postgres) converts to `$1,$2` |
+| `clickhouse/index.ts` | `@clickhouse/client` | Drop-in `DatabaseAdapter` (auto-FINAL on framework reads, tombstone DELETEs, read-then-merge UPDATEs) plus `migrate()`, `rbac` (org/dept/supervisor graph), `approvals` (state machine). Cluster-aware. Verified on CH 24.8 / 25.3 / 25.10. |
+
+### ClickHouse Adapter Internals (`src/adapters/clickhouse/`)
+| File | Purpose |
+|------|---------|
+| `index.ts` | `createClickhouseAdapter()` — assembles adapter-core + rbac + approvals + migrate; sessions_dict hot path lookup |
+| `adapter-core.ts` | Translates `DatabaseAdapter.prepare/bind/run/first/all` to CH calls. Auto-injects `FINAL` on framework table reads. DELETE → `_deleted=1` tombstone insert. UPDATE → SELECT + merge + insert. |
+| `sql-translator.ts` | Parses `?`-style INSERT / SELECT / UPDATE / DELETE; rewrites `?` → `{pN:String}`; adds `AND _deleted = 0` to SELECT WHEREs |
+| `ddl.ts` | Cluster-aware DDL builders for the 9 `ReplacingMergeTree` tables, 1 append-only `MergeTree` (`approval_decisions`), and 1 `Dictionary` (`sessions_dict`) |
+| `migrate.ts` | Runs DDL idempotently. Autodetects current database via `SELECT currentDatabase()` so the dictionary's source query can be fully qualified. |
+| `rbac.ts` | `RbacApi`: createOrganization / Department / Role / grant / revoke / `resolvePermission` with `via: 'role' \| 'inherited' \| 'supervisor' \| 'home_org' \| 'superadmin'`. Cycle-safe org-tree + supervisor-chain traversal. |
+| `approvals.ts` | `ApprovalsApi`: `open` (chain frozen at submit time), `decide` (idempotent on `(requestId, approverUserId)`, supports approve/reject/delegate), `expireDuePending`, `listForApprover` / `listForRequester`. |
+| `cycle-detect.ts` | `traverseChain()` + `collectDescendants()` — `Set<string>` visited set, throws on cycle. |
+| `util.ts` | `chDate(d)` canonical CH `DateTime64` formatter (`YYYY-MM-DD HH:MM:SS.mmm`); `chDateNow()`; `uuid()` v4 |
+| `types.ts` | `CHClient`, `CHTableNames`, `Organization`, `Department`, `EffectiveRole`, `PermissionDecision`, `ApprovalRequest`, `ApprovalStatus`, `Logger` |
 
 ### Entry Points
 | File | Purpose |
@@ -60,7 +75,9 @@
 
 ## Tests (`tests/`)
 
-169 tests across 11 files using `bun:test`:
+331 tests across 20 files using `bun:test`:
+
+### Unit suite
 
 | File | What it tests |
 |------|---------------|
@@ -68,14 +85,32 @@
 | `cookie.test.ts` | Cookie serialization, parsing, config resolution |
 | `password.test.ts` | PBKDF2 hashing, verification, constant-time comparison |
 | `providers.test.ts` | Provider creation, auth URL generation, PKCE |
-| `queries.test.ts` | All SQL operations via mock DB |
+| `queries.test.ts` | All SQL operations via mock DB; createUser `extraColumns` + reserved-key guard |
 | `handlers.test.ts` | All route handlers, email restriction, RBAC endpoints |
 | `auth.test.ts` | Full OAuth flow integration (login → callback → session → logout) |
 | `migrate.test.ts` | Schema creation, idempotent migration |
 | `rbac.test.ts` | Permission resolution, wildcards, unknown roles |
 | `middleware.test.ts` | Public paths, auth gating, route permissions, static file skip |
-| `adapters.test.ts` | All 5 adapters: D1, bun:sqlite, pg, mysql, bun:sql |
-| `helpers/mock-db.ts` | In-memory DatabaseAdapter mock for testing |
+| `adapters.test.ts` | All 5 SQL adapters: D1, bun:sqlite, pg, mysql, bun:sql |
+| `callbacks.test.ts` | `signIn` / `session` lifecycle callbacks; `userOverrides` injection; `pages.error` open-redirect guard |
+| `email-linking.test.ts` | `allowEmailAccountLinking` flag + `emailLinked` callback context field |
+| `security-*.test.ts` | CSRF, OAuth state, session, password enumeration, SQL injection (meta) |
+| `adapters/clickhouse/clickhouse.test.ts` | All 12 spec scenarios against the in-memory mock CH client (round-trip auth, cascade delete, org/dept tree, cycle detection, `resolvePermission` `via` outcomes, approval flow + delegation + rejection + expire, sessions_dict, cluster mode) |
+| `adapters/clickhouse/helpers/mock-ch.ts` | In-memory `CHClient` simulating `ReplacingMergeTree FINAL`, `dictGet`, named-params |
+| `helpers/mock-db.ts` | In-memory `DatabaseAdapter` mock for SQL adapter tests |
+
+### Integration suite (requires Docker)
+
+`tests/integration/clickhouse/run.ts` — drives the same 13 spec scenarios against three live ClickHouse versions (`24.8`, `25.3`, `25.10`) booted via `examples/clickhouse/docker-compose.yml`. Run with:
+
+```bash
+docker compose -f examples/clickhouse/docker-compose.yml up -d
+bun tests/integration/clickhouse/run.ts          # all three
+bun tests/integration/clickhouse/run.ts 24       # one version
+docker compose -f examples/clickhouse/docker-compose.yml down -v
+```
+
+Prints a per-version pass/fail summary.
 
 ## Sample App (`sample-auth/`)
 
@@ -89,3 +124,13 @@ Cloudflare Worker demo (deploy your own — see `sample-auth/README.md`)
 | `pages/dashboard.tsx` | Session info, RBAC, linked accounts, feature overview |
 | `build.ts` | `Bun.build()` with content-hashed filenames |
 | `wrangler.jsonc` | D1 binding, Assets SPA mode |
+
+## ClickHouse Example (`examples/clickhouse/`)
+
+Runnable adapter integration with a real ClickHouse server:
+
+| File | Purpose |
+|------|---------|
+| `docker-compose.yml` | Runs CH 24.8, 25.3, 25.10 simultaneously on ports 8124/8125/8126 |
+| `server.ts` | `createReactAuth({ database: createClickhouseAdapter({ client }) })` with a Google provider, `migrate()`, RBAC bootstrap, structured JSON logger |
+| `README.md` | How to spin up CH, run the integration test runner, validate against your CI |
