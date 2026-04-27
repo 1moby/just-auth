@@ -1,6 +1,6 @@
 {
   "name": "@1moby/just-auth",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Lightweight zero-dependency edge-native auth library for React",
   "type": "module",
   "sideEffects": false,
@@ -49,6 +49,11 @@
       "types": "./dist/adapters/bun-sql.d.ts",
       "import": "./dist/adapters/bun-sql.js",
       "default": "./src/adapters/bun-sql.ts"
+    },
+    "./adapters/clickhouse": {
+      "types": "./dist/adapters/clickhouse/index.d.ts",
+      "import": "./dist/adapters/clickhouse/index.js",
+      "default": "./src/adapters/clickhouse/index.ts"
     }
   },
   "files": [
@@ -77,6 +82,8 @@
     "postgres",
     "mysql",
     "rbac",
+    "clickhouse",
+    "approvals",
     "zero-dependency"
   ],
   "author": "1moby",
@@ -90,7 +97,13 @@
     "url": "https://github.com/1moby/just-auth/issues"
   },
   "peerDependencies": {
+    "@clickhouse/client": ">=1.0.0",
     "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@clickhouse/client": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -1,0 +1,24 @@
+# Local ClickHouse for testing the adapter against a real CH instance.
+# Run: docker compose up -d
+# Then: bun examples/clickhouse/server.ts
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.1
+    container_name: just-auth-ch
+    ports:
+      - "8123:8123" # HTTP
+      - "9000:9000" # native TCP
+    environment:
+      CLICKHOUSE_DB: just_auth
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12

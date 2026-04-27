@@ -416,6 +416,68 @@ The Pg and Bun.sql adapters auto-translate `?` placeholders to `$1, $2, ...`. Sc
 
 You can also implement the `DatabaseAdapter` interface directly for any custom driver.
 
+## ClickHouse adapter (experimental)
+
+`@1moby/just-auth/adapters/clickhouse` is a drop-in replacement for the SQL adapters that backs auth state on ClickHouse `ReplacingMergeTree` tables, plus exposes two extra APIs on the same adapter object:
+
+- `adapter.rbac` — a multi-org / department / supervisor permission graph.
+- `adapter.approvals` — an approval-flow state machine (open / decide / delegate / expire).
+- `adapter.migrate()` — idempotent DDL setup, cluster-aware.
+
+```ts
+import { createClient } from "@clickhouse/client";
+import { createClickhouseAdapter } from "@1moby/just-auth/adapters/clickhouse";
+import { createReactAuth } from "@1moby/just-auth";
+
+const ch = createClient({ url: env.CH_URL, username: env.CH_USER, password: env.CH_PASS });
+const adapter = createClickhouseAdapter({ client: ch });
+await adapter.migrate();
+
+const auth = createReactAuth({
+  database: adapter,
+  providers: [/* ... */],
+});
+
+// RBAC
+await adapter.rbac.createOrganization({ id: "org1", name: "Acme" });
+await adapter.rbac.defineRole({ id: "editor", scope: "org", permissions: ["dashboard.edit"] });
+await adapter.rbac.grantUserRole({ userId: "u1", roleId: "editor", orgId: "org1", grantedBy: "system" });
+
+const decision = await adapter.rbac.resolvePermission({
+  userId: "u1",
+  permission: "dashboard.edit",
+  resource: { orgId: "org1" },
+});
+// decision.allowed === true; decision.via === "role"
+
+// Approvals
+const req = await adapter.approvals.open({
+  requesterUserId: "u1",
+  action: "dashboard.publish",
+  resource: { orgId: "org1" },
+  payload: { title: "Q4" },
+  chainStrategy: "supervisor_chain",
+});
+await adapter.approvals.decide({
+  requestId: req.id,
+  approverUserId: "boss",
+  decision: "approved",
+});
+```
+
+### OLAP-on-OLTP trade-offs (read these before adopting)
+
+- **Hot reads use `FINAL`** on `ReplacingMergeTree` to collapse to the latest version per key. This is more expensive than a typical SQL row read; budget for it.
+- **`sessions_dict`** Dictionary fronts the session lookup hot path. Default `LIFETIME(MIN 5 MAX 15)` — *up to 15s* of staleness on revoked sessions. Either accept the window, force `SYSTEM RELOAD DICTIONARY sessions_dict` on revoke, or disable the dict via `useSessionDict: false`.
+- **Email uniqueness is best-effort.** ClickHouse has no transactional unique constraint. Two parallel `createUser` calls with the same email both succeed; the consumer must check via `FINAL ... LIMIT 1` before insert. Even then, a residual race window remains.
+- **Cascade deletes are app-level.** Deleting a user emits tombstone rows across `users`, `accounts`, `sessions`, and `user_role_grants` *sequentially*. There is a small window where the user is gone but related rows are not.
+- **No multi-table transactions.** The approval state machine writes a tombstone row + a fresh row for each transition. A crash between the audit-log append and the request-row update can leave the audit slightly ahead of state.
+- **Cluster mode.** Pass `cluster: 'name'` to wrap every DDL with `ON CLUSTER '<name>'` and every engine with `Replicated*`. Keeper paths follow `/clickhouse/tables/{installation}/{shard}/<table>` (uses CH macros).
+
+The pre-existing `RbacConfig`-style RBAC continues to work on every adapter (including ClickHouse) — the graph RBAC API is *additive*, you can use either or both.
+
+See `examples/clickhouse/` for a runnable docker-compose setup.
+
 ## Exports
 
 ```ts
@@ -438,6 +500,7 @@ import { createBunSQLiteAdapter } from "@1moby/just-auth/adapters/bun-sqlite";
 import { createPgAdapter } from "@1moby/just-auth/adapters/pg";
 import { createMySQLAdapter } from "@1moby/just-auth/adapters/mysql";
 import { createBunSQLAdapter } from "@1moby/just-auth/adapters/bun-sql";
+import { createClickhouseAdapter } from "@1moby/just-auth/adapters/clickhouse";
 
 // Types
 import type {
